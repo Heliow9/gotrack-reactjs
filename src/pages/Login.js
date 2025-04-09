@@ -17,6 +17,7 @@ function Login() {
       });
 
       localStorage.setItem('token', response.data.token);
+      localStorage.setItem('_id', response.data.restaurante._id);
       navigate('/'); // redireciona para o painel após login
     } catch (err) {
       setErro(err.response?.data?.mensagem || 'Erro ao fazer login');
