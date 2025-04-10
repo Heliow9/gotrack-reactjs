@@ -21,7 +21,7 @@ import {
 import AddIcon from "@mui/icons-material/Add";
 import SearchIcon from "@mui/icons-material/Search";
 
-const Motoristas = () => {
+const Entregadores = () => {
   const [motoristas, setMotoristas] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -144,4 +144,4 @@ const Motoristas = () => {
   );
 };
 
-export default Motoristas;
+export default Entregadores;
