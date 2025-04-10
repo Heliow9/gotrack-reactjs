@@ -3,7 +3,7 @@ import { Routes, Route, useNavigate, Navigate } from "react-router-dom";
 import Sidebar from "./components/Sidebar";
 import Dashboard from "./pages/Dashboard";
 import Pedidos from "./pages/Pedidos";
-import Entregadores from "./pages/Entregadores";
+import Motoristas from "./pages/Motoristas";
 import Configuracoes from "./pages/Configuracoes";
 import PedidosEmAndamento from "./components/PedidosEmAndamento";
 import { Button } from "@mui/material";
@@ -38,7 +38,7 @@ function App() {
           <Routes>
             <Route path="/" element={<Dashboard />} />
             <Route path="/pedidos" element={<Pedidos />} />
-            <Route path="/entregadores" element={<Entregadores />} />
+            <Route path="/motoristas" element={<Motoristas />} />
             <Route path="/configuracoes" element={<Configuracoes />} />
             <Route path="*" element={<Navigate to="/" />} />
           </Routes>

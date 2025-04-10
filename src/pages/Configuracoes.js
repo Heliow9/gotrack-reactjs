@@ -100,35 +100,45 @@ const Configuracoes = () => {
     }
   };
 
+  const MAPBOX_API_KEY = "pk.eyJ1IjoiaGVsaW93OSIsImEiOiJjbTZrM2E4dWYwOGRlMmxvbHU3cWxpbWd1In0.K3uVvrfToT60yREcOfGdfw"; // substitua pela sua chave
+
   const buscarCoordenadasEndereco = async (formAtualizado) => {
-    const { enderecoRua, enderecoNumero, enderecoBairro, enderecoCidade, enderecoEstado } = formAtualizado;
-
+    const {
+      enderecoRua,
+      enderecoNumero,
+      enderecoBairro,
+      enderecoCidade,
+      enderecoEstado,
+    } = formAtualizado;
+  
     const enderecoCompleto = `${enderecoRua}, ${enderecoNumero}, ${enderecoBairro}, ${enderecoCidade} - ${enderecoEstado}`;
-
+  
     try {
-      const res = await axios.get(`https://nominatim.openstreetmap.org/search`, {
-        params: {
-          q: enderecoCompleto,
-          format: "json",
-        },
-        headers: {
-          'Accept-Language': 'pt-BR',
-          'User-Agent': 'sistema-delivery-configuracoes'
+      const res = await axios.get(
+        `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(enderecoCompleto)}.json`,
+        {
+          params: {
+            access_token: MAPBOX_API_KEY,
+            limit: 1,
+            language: "pt-BR",
+          },
         }
-      });
-
-      if (res.data && res.data.length > 0) {
-        const { lat, lon } = res.data[0];
+      );
+  
+      if (res.data && res.data.features.length > 0) {
+        const [lon, lat] = res.data.features[0].center;
         return {
-          latitude: parseFloat(lat),
-          longitude: parseFloat(lon),
+          latitude: lat,
+          longitude: lon,
         };
       }
     } catch (error) {
-      console.error("Erro ao buscar coordenadas:", error);
+      console.error("Erro ao buscar coordenadas no Mapbox:", error);
     }
+  
     return null;
   };
+  
 
   const handleSalvar = async () => {
     try {

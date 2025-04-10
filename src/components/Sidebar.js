@@ -93,7 +93,7 @@ const Sidebar = () => {
         <FaMotorcycle style={{ color: "#fff" }} />
       </ListItemIcon>
       <ListItemText
-        primary="Entregadores"
+        primary="Motoristas"
         primaryTypographyProps={{ style: { color: "#fff" } }}
       />
     </ListItem>
