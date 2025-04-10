@@ -144,8 +144,8 @@ const Mapa = () => {
       <Map
         ref={mapRef}
         initialViewState={{
-          longitude: getMapCenter()[0],
-          latitude: getMapCenter()[1],
+          longitude: restauranteData.location.latitude,
+          latitude: restauranteData.location.longitude,
           zoom: 14,
         }}
         mapboxAccessToken={MAPBOX_TOKEN}
