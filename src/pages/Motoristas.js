@@ -29,7 +29,7 @@ const Motoristas = () => {
 
   useEffect(() => {
     const restauranteId = localStorage.getItem('_id');
-    fetch(`http://localhost:10000/byRestaurante/${restauranteId}`)
+    fetch(`https://gotrackapi.onrender.com/${restauranteId}`)
       .then((res) => res.json())
       .then((data) => {
         setMotoristas(data);
