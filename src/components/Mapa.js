@@ -1,91 +1,36 @@
-import React, { useState, useEffect } from "react";
-import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
-import L from "leaflet";
-import io from "socket.io-client";
-import "leaflet/dist/leaflet.css";
+import React, { useEffect, useState, useRef } from 'react';
+import Map, { Marker, Popup } from 'react-map-gl';
+import 'mapbox-gl/dist/mapbox-gl.css';
+import io from 'socket.io-client';
+import axios from 'axios';
+import { useMapContext } from '../Context/MapContext';
+import { pedidosFake } from './PedidosEmAndamento';
+
 import capacete from '../assets/helmet.png';
 import restaurantePin from '../assets/restaurantPin.png';
-import { pedidosFake } from './PedidosEmAndamento'
-import axios from "axios";
-import { useMapContext } from "../Context/MapContext";
 
 const apiUrl = 'https://gotrackapi.onrender.com';
-
-const motoristaIcon = new L.Icon({
-  iconUrl: capacete,
-  iconSize: [32, 32],
-  iconAnchor: [16, 32],
-  popupAnchor: [0, -32]
-});
-
-
-const restauranteIcon = new L.icon({
-  iconUrl: restaurantePin,
-  iconSize: [32, 45],
-  iconAnchor: [16, 32],
-  popupAnchor: [0, -50]
-})
-
-const pedidoIcon = new L.Icon({
-  iconUrl: "https://cdn-icons-png.flaticon.com/512/3448/3448604.png", // um ícone de pacote
-  iconSize: [28, 28],
-  iconAnchor: [14, 28],
-  popupAnchor: [0, -30],
-});
-
-
+const MAPBOX_TOKEN = 'pk.eyJ1IjoiaGVsaW93OSIsImEiOiJjbTZrM2E4dWYwOGRlMmxvbHU3cWxpbWd1In0.K3uVvrfToT60yREcOfGdfw'; // <-- Substitua por sua chave da Mapbox
 
 const Mapa = () => {
   const [motoristas, setMotoristas] = useState([]);
   const [restauranteId, setRestauranteId] = useState(null);
   const [restauranteData, setRestauranteData] = useState(null);
   const [pedidos, setPedidos] = useState([]);
-
-
-
-
-  const CameraController = () => {
-    const { selectedPosition } = useMapContext();
-    const map = useMap();
-  
-    useEffect(() => {
-      if (selectedPosition) {
-        const pedidoEncontrado = pedidos.find(
-          (pedido) => pedido._id === selectedPosition
-        );
-  
-        if (pedidoEncontrado) {
-          map.flyTo([pedidoEncontrado.latitude, pedidoEncontrado.longitude], 15, {
-            duration: 1.5,
-          });
-        }
-      }
-    }, [selectedPosition, map, pedidos]);
-  
-    return null;
-  };
-    
-
-
-
-
+  const mapRef = useRef();
+  const { selectedPosition } = useMapContext();
 
   useEffect(() => {
-    // Buscar o restaurante logado
     const fetchRestaurante = async () => {
       const token = localStorage.getItem("token");
 
       try {
         const response = await fetch(`${apiUrl}/api/restaurantes/me`, {
           method: "GET",
-          headers: {
-            Authorization: token,
-          },
+          headers: { Authorization: token },
         });
 
-        if (!response.ok) {
-          throw new Error("Erro ao buscar restaurante");
-        }
+        if (!response.ok) throw new Error("Erro ao buscar restaurante");
 
         const data = await response.json();
         setRestauranteId(data._id);
@@ -116,41 +61,37 @@ const Mapa = () => {
       });
     });
 
-    return () => {
-      socket.disconnect();
-    };
-  }, [restauranteId]); // só conecta quando o restauranteId estiver disponível
-
-
+    return () => socket.disconnect();
+  }, [restauranteId]);
 
   useEffect(() => {
     const geocodificarPedidos = async () => {
       const pedidosDoRestaurante = pedidosFake.filter(
         (p) => p.restauranteId === restauranteId
       );
-
+  
       const geocodificados = await Promise.all(
         pedidosDoRestaurante.map(async (pedido) => {
           try {
-            const geo = await axios.get(
-              `https://nominatim.openstreetmap.org/search`,
+            const response = await axios.get(
+              `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(pedido.enderecoCliente)}.json`,
               {
                 params: {
-                  q: pedido.enderecoCliente,
-                  format: "json",
-                  addressdetails: 1,
+                  access_token: 'pk.eyJ1IjoiaGVsaW93OSIsImEiOiJjbTZrM2E4dWYwOGRlMmxvbHU3cWxpbWd1In0.K3uVvrfToT60yREcOfGdfw',
                   limit: 1,
                 },
               }
             );
-
-            if (geo.data[0]) {
+  
+            if (response.data.features && response.data.features.length > 0) {
+              const [lon, lat] = response.data.features[0].geometry.coordinates;
               return {
                 ...pedido,
-                latitude: parseFloat(geo.data[0].lat),
-                longitude: parseFloat(geo.data[0].lon),
+                latitude: lat,
+                longitude: lon,
               };
             }
+  
             return null;
           } catch (err) {
             console.error(`Erro ao geocodificar ${pedido._id}:`, err);
@@ -158,70 +99,91 @@ const Mapa = () => {
           }
         })
       );
-
+  
       setPedidos(geocodificados.filter(Boolean));
-    
     };
-
+  
     if (restauranteId) {
       geocodificarPedidos();
     }
-    console.log(pedidos)
   }, [restauranteId]);
 
+  // Centralizar quando selecionar um pedido
+  useEffect(() => {
+    if (!selectedPosition || !mapRef.current) return;
+    const pedido = pedidos.find(p => p._id === selectedPosition);
+    if (pedido) {
+      mapRef.current.flyTo({
+        center: [pedido.longitude, pedido.latitude],
+        zoom: 15,
+        duration: 1500,
+      });
+    }
+  }, [selectedPosition, pedidos]);
 
+  // Obter centro aproximado de todos os pontos
+  const getMapCenter = () => {
+    const pontos = [
+      ...motoristas,
+      ...pedidos,
+      restauranteData?.localizacao,
+    ].filter(Boolean);
 
+    if (!pontos.length) return [-34.8808, -8.0476]; // fallback: Recife
+
+    const avgLat =
+      pontos.reduce((sum, p) => sum + (p.latitude || p.lat), 0) / pontos.length;
+    const avgLon =
+      pontos.reduce((sum, p) => sum + (p.longitude || p.lon), 0) / pontos.length;
+
+    return [avgLon, avgLat];
+  };
 
   return (
-    <div style={{ height: "600px", width: "100%" }}>
-      {
-        restauranteData ?
-          <MapContainer center={[restauranteData.localizacao.latitude,
-          restauranteData.localizacao.longitude]} zoom={17} style={{ height: "100%", width: "100%" }}>
-            <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-            {motoristas.map((motorista) => (
-              <Marker key={motorista.email} position={[motorista.latitude, motorista.longitude]} icon={motoristaIcon}>
-                <Popup>
-                  Motorista: <strong>{motorista.email}</strong>
-                  <br />
-                  Distância até a loja: {Number(motorista.distancia).toFixed(2)}m
-                </Popup>
-              </Marker>
-            ))}
-            {restauranteData && (
-              <Marker
-                key={restauranteData._id}
-                position={[
-                  restauranteData.localizacao.latitude,
-                  restauranteData.localizacao.longitude
-                ]}
-                icon={restauranteIcon}
-              >
-                <Popup>
-                  Restaurante: <strong>{restauranteData.nome}</strong>
-                  <br />
-                  Entregas do dia: <strong>{10}</strong>
-                </Popup>
-              </Marker>
-            )}
-            <CameraController />
-            {/* Pedidos com localização */}
-            {pedidos.map((pedido) => (
-              <Marker
-                key={pedido._id}
-                position={[pedido.latitude, pedido.longitude]}
-                icon={pedidoIcon}
-              >
-                <Popup>
-                  <span><strong>ID do Pedido:</strong> {pedido._id}</span>
-                  <br />
-                  Cliente: {pedido.nomeCliente}
-                </Popup>
-              </Marker>
-            ))}
-          </MapContainer> : null
-      }
+    <div style={{ height: '600px', width: '100%' }}>
+      <Map
+        ref={mapRef}
+        initialViewState={{
+          longitude: getMapCenter()[0],
+          latitude: getMapCenter()[1],
+          zoom: 14,
+        }}
+        mapboxAccessToken={MAPBOX_TOKEN}
+        mapStyle="mapbox://styles/mapbox/streets-v11"
+        style={{ width: '100%', height: '100%' }}
+      >
+        {/* Restaurante */}
+        {restauranteData && (
+          <Marker
+            longitude={restauranteData.localizacao.longitude}
+            latitude={restauranteData.localizacao.latitude}
+          >
+            <img src={restaurantePin} alt="Restaurante" style={{ width: 40 }} />
+          </Marker>
+        )}
 
+        {/* Motoristas */}
+        {motoristas.map((m) => (
+          <Marker key={m.email} longitude={m.longitude} latitude={m.latitude}>
+            <img src={capacete} alt="Motorista" style={{ width: 32 }} />
+          </Marker>
+        ))}
+
+        {pedidos
+          .filter(p => !isNaN(p.latitude) && !isNaN(p.longitude)) // <- importante!
+          .map((p) => (
+            <Marker key={p._id} longitude={p.longitude} latitude={p.latitude}>
+              <img
+                src="https://cdn-icons-png.flaticon.com/512/3448/3448604.png"
+                alt="Pedido"
+                style={{ width: 28 }}
+              />
+              <Popup anchor="top" closeButton={false} longitude={p.longitude} latitude={p.latitude}>
+                <strong>Pedido:</strong> {p.nomeCliente}
+              </Popup>
+            </Marker>
+          ))}
+      </Map>
     </div>
   );
 };

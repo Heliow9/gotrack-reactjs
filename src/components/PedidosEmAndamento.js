@@ -14,7 +14,7 @@ export const pedidosFake = [
     _id: "1",
     nomeCliente: "João Silva",
     telefoneCliente: "81999998888",
-    enderecoCliente: "Rua Jeronimo de Albuquerque 245, Varadouro - Olinda, 53020350",
+    enderecoCliente: "Rua Jerônimo de Albuquerque, 245 - Varadouro, Olinda - PE, 53020-350",
     itens: [
       { nome: "X-Burger", quantidade: 2 },
       { nome: "Refrigerante Lata", quantidade: 1 },
@@ -27,7 +27,7 @@ export const pedidosFake = [
     _id: "2",
     nomeCliente: "Maria Souza",
     telefoneCliente: "81988887777",
-    enderecoCliente: "Rua Duarte Coelho 349, Santa Tereza, Olinda - 53010-010",
+    enderecoCliente: "Rua Duarte Coelho, 349 - Santa Tereza, Olinda - PE, 53010-010",
     itens: [
       { nome: "Pizza Calabresa", quantidade: 1 },
       { nome: "Suco Natural", quantidade: 2 },
@@ -40,7 +40,7 @@ export const pedidosFake = [
     _id: "3",
     nomeCliente: "Carlos Lima",
     telefoneCliente: "81987776666",
-    enderecoCliente: "Rua do Sol, 100 - Olinda",
+    enderecoCliente: "Rua do Sol, 100 - Carmo, Olinda - PE, 53020-090",
     itens: [
       { nome: "Pastel de Frango", quantidade: 3 },
       { nome: "Coca-Cola 2L", quantidade: 1 },
@@ -53,7 +53,7 @@ export const pedidosFake = [
     _id: "4",
     nomeCliente: "Ana Beatriz",
     telefoneCliente: "81986665555",
-    enderecoCliente: "Rua das Mangueiras, 300 - Recife",
+    enderecoCliente: "Rua das Mangueiras, 300 - Rosarinho, Recife - PE, 52041-310",
     itens: [
       { nome: "Sanduíche Natural", quantidade: 2 },
       { nome: "Chá Gelado", quantidade: 1 },
@@ -66,7 +66,7 @@ export const pedidosFake = [
     _id: "5",
     nomeCliente: "Lucas Martins",
     telefoneCliente: "81985554444",
-    enderecoCliente: "Av. Norte, 1234 - Recife",
+    enderecoCliente: "Av. Norte Miguel Arraes de Alencar, 1234 - Santo Amaro, Recife - PE, 50100-000",
     itens: [
       { nome: "Lasanha", quantidade: 1 },
       { nome: "Refrigerante 600ml", quantidade: 1 },
@@ -79,7 +79,7 @@ export const pedidosFake = [
     _id: "6",
     nomeCliente: "Fernanda Alves",
     telefoneCliente: "81984443333",
-    enderecoCliente: "Rua Imperial, 222 - Recife",
+    enderecoCliente: "Rua Imperial, 222 - São José, Recife - PE, 50090-000",
     itens: [
       { nome: "Coxinha", quantidade: 5 },
       { nome: "Suco de Laranja", quantidade: 2 },
@@ -92,7 +92,7 @@ export const pedidosFake = [
     _id: "7",
     nomeCliente: "Paulo Henrique",
     telefoneCliente: "81983332222",
-    enderecoCliente: "Rua Nova, 12 - Olinda",
+    enderecoCliente: "Rua Nova, 12 - Bairro Novo, Olinda - PE, 53030-420",
     itens: [
       { nome: "Hot Dog", quantidade: 2 },
       { nome: "Guaraná", quantidade: 2 },
@@ -105,7 +105,7 @@ export const pedidosFake = [
     _id: "8",
     nomeCliente: "Juliana Castro",
     telefoneCliente: "81982221111",
-    enderecoCliente: "Rua da Harmonia, 77 - Recife",
+    enderecoCliente: "Rua da Harmonia, 77 - Casa Amarela, Recife - PE, 52060-390",
     itens: [
       { nome: "Bolo de Rolo", quantidade: 1 },
       { nome: "Café", quantidade: 1 },
@@ -118,7 +118,7 @@ export const pedidosFake = [
     _id: "9",
     nomeCliente: "Ricardo Mendes",
     telefoneCliente: "81981110000",
-    enderecoCliente: "Rua Amarela, 9 - Recife",
+    enderecoCliente: "Rua Amarela, 9 - Encruzilhada, Recife - PE, 52041-230",
     itens: [
       { nome: "Esfirra", quantidade: 3 },
       { nome: "Refrigerante Lata", quantidade: 1 },
@@ -131,7 +131,7 @@ export const pedidosFake = [
     _id: "10",
     nomeCliente: "Gabriela Nunes",
     telefoneCliente: "81980009999",
-    enderecoCliente: "Av. Cruz Cabugá, 890 - Recife",
+    enderecoCliente: "Av. Cruz Cabugá, 890 - Santo Amaro, Recife - PE, 50040-000",
     itens: [
       { nome: "Tapioca", quantidade: 2 },
       { nome: "Achocolatado", quantidade: 1 },
@@ -139,7 +139,7 @@ export const pedidosFake = [
     valorTotal: 23.75,
     status: "pendente",
     restauranteId: "67f07aa3cc3cc5b6e0ebd503"
-  },
+  }
   // ...mais pedidos se necessário
 ];
 
