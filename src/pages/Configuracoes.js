@@ -51,7 +51,7 @@ const Configuracoes = () => {
     async function fetchConfig() {
       try {
         const token = localStorage.getItem("token");
-        const response = await axios.get("http://localhost:10000/api/restaurantes/me", {
+        const response = await axios.get("https://gotrackapi.onrender.com/api/restaurantes/me", {
           headers: { Authorization: token },
         });
         if (response.data) {
