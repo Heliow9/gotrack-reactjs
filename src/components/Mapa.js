@@ -69,7 +69,7 @@ const Mapa = () => {
       const pedidosDoRestaurante = pedidosFake.filter(
         (p) => p.restauranteId === restauranteId
       );
-  
+
       const geocodificados = await Promise.all(
         pedidosDoRestaurante.map(async (pedido) => {
           try {
@@ -82,7 +82,7 @@ const Mapa = () => {
                 },
               }
             );
-  
+
             if (response.data.features && response.data.features.length > 0) {
               const [lon, lat] = response.data.features[0].geometry.coordinates;
               return {
@@ -91,7 +91,7 @@ const Mapa = () => {
                 longitude: lon,
               };
             }
-  
+
             return null;
           } catch (err) {
             console.error(`Erro ao geocodificar ${pedido._id}:`, err);
@@ -99,10 +99,10 @@ const Mapa = () => {
           }
         })
       );
-  
+
       setPedidos(geocodificados.filter(Boolean));
     };
-  
+
     if (restauranteId) {
       geocodificarPedidos();
     }
@@ -123,6 +123,7 @@ const Mapa = () => {
 
   // Obter centro aproximado de todos os pontos
   const getMapCenter = () => {
+    console.log('funcionou')
     const pontos = [
       ...motoristas,
       ...pedidos,
@@ -138,14 +139,15 @@ const Mapa = () => {
 
     return [avgLon, avgLat];
   };
-
+  console.log(restauranteData)
   return (
-    <div style={{ height: '600px', width: '100%' }}>
+    restauranteData &&
+    <div style={{ height: '600px', width: '100%', flex: 0, display: 'flex'}}>
       <Map
         ref={mapRef}
-        initialViewState={{
-          longitude: restauranteData.location.latitude,
-          latitude: restauranteData.location.longitude,
+        initialViewState={{ 
+          longitude: restauranteData.localizacao.longitude,
+          latitude: restauranteData.localizacao.latitude,
           zoom: 14,
         }}
         mapboxAccessToken={MAPBOX_TOKEN}
@@ -183,6 +185,7 @@ const Mapa = () => {
               </Popup>
             </Marker>
           ))}
+  
       </Map>
     </div>
   );
