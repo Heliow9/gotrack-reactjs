@@ -141,7 +141,7 @@ const Configuracoes = () => {
         localizacao: coordenadas || form.localizacao,
       };
 
-      await axios.put("http://localhost:10000/api/restaurantes/configuracoes", payload, {
+      await axios.put("https://gotrackapi.onrender.com/api/restaurantes/configuracoes", payload, {
         headers: { Authorization: token },
       });
 

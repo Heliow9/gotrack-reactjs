@@ -29,7 +29,10 @@ const Motoristas = () => {
 
   useEffect(() => {
     const restauranteId = localStorage.getItem('_id');
-    fetch(`https://gotrackapi.onrender.com/byRestaurante/${restauranteId}`)
+    const token = localStorage.getItem("token");
+    fetch(`https://gotrackapi.onrender.com/byRestaurante/${restauranteId}`, {
+      headers: { Authorization: token },
+    })
       .then((res) => res.json())
       .then((data) => {
         setMotoristas(data);
