@@ -1,10 +1,13 @@
 import React, { useState, useEffect } from "react";
-import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
+import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
 import L from "leaflet";
 import io from "socket.io-client";
 import "leaflet/dist/leaflet.css";
 import capacete from '../assets/helmet.png';
 import restaurantePin from '../assets/restaurantPin.png';
+import { pedidosFake } from './PedidosEmAndamento'
+import axios from "axios";
+import { useMapContext } from "../Context/MapContext";
 
 const apiUrl = 'https://gotrackapi.onrender.com';
 
@@ -23,11 +26,41 @@ const restauranteIcon = new L.icon({
   popupAnchor: [0, -50]
 })
 
+const pedidoIcon = new L.Icon({
+  iconUrl: "https://cdn-icons-png.flaticon.com/512/3448/3448604.png", // um ícone de pacote
+  iconSize: [28, 28],
+  iconAnchor: [14, 28],
+  popupAnchor: [0, -30],
+});
+
+
 
 const Mapa = () => {
   const [motoristas, setMotoristas] = useState([]);
   const [restauranteId, setRestauranteId] = useState(null);
   const [restauranteData, setRestauranteData] = useState(null);
+  const [pedidos, setPedidos] = useState([]);
+
+
+
+
+  const CameraController = () => {
+    const { selectedPosition } = useMapContext();
+    const map = useMap();
+
+    useEffect(() => { 
+      console.log(selectedPosition)
+      if (selectedPosition) {
+        map.flyTo(selectedPosition, 17, { duration: 1.5 });
+      }
+    }, [selectedPosition, map]);
+
+    return null;
+  };
+
+
+
+
 
   useEffect(() => {
     // Buscar o restaurante logado
@@ -80,6 +113,56 @@ const Mapa = () => {
     };
   }, [restauranteId]); // só conecta quando o restauranteId estiver disponível
 
+
+
+  useEffect(() => {
+    const geocodificarPedidos = async () => {
+      const pedidosDoRestaurante = pedidosFake.filter(
+        (p) => p.restauranteId === restauranteId
+      );
+
+      const geocodificados = await Promise.all(
+        pedidosDoRestaurante.map(async (pedido) => {
+          try {
+            const geo = await axios.get(
+              `https://nominatim.openstreetmap.org/search`,
+              {
+                params: {
+                  q: pedido.enderecoCliente,
+                  format: "json",
+                  addressdetails: 1,
+                  limit: 1,
+                },
+              }
+            );
+
+            if (geo.data[0]) {
+              return {
+                ...pedido,
+                latitude: parseFloat(geo.data[0].lat),
+                longitude: parseFloat(geo.data[0].lon),
+              };
+            }
+            return null;
+          } catch (err) {
+            console.error(`Erro ao geocodificar ${pedido._id}:`, err);
+            return null;
+          }
+        })
+      );
+
+      setPedidos(geocodificados.filter(Boolean));
+      console.log(pedidos)
+    };
+
+    if (restauranteId) {
+      geocodificarPedidos();
+    }
+  }, [restauranteId]);
+
+
+
+
   return (
     <div style={{ height: "600px", width: "100%" }}>
       {
@@ -112,6 +195,21 @@ const Mapa = () => {
                 </Popup>
               </Marker>
             )}
+            <CameraController />
+            {/* Pedidos com localização */}
+            {pedidos.map((pedido) => (
+              <Marker
+                key={pedido._id}
+                position={[pedido.latitude, pedido.longitude]}
+                icon={pedidoIcon}
+              >
+                <Popup>
+                  <span><strong>ID do Pedido:</strong> {pedido._id}</span>
+                  <br />
+                  Cliente: {pedido.nomeCliente}
+                </Popup>
+              </Marker>
+            ))}
           </MapContainer> : null
       }
 

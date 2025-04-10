@@ -4,7 +4,7 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import App from "./App";
 import Login from "./pages/Login";
 import ProtectedRoute from "../src/components/ProtectedRoute";
-
+import { MapProvider } from './Context/MapContext'
 const root = ReactDOM.createRoot(document.getElementById("root"));
 root.render(
   <BrowserRouter>
@@ -14,7 +14,9 @@ root.render(
         path="/*"
         element={
           <ProtectedRoute>
-            <App />
+            <MapProvider>
+              <App />
+            </MapProvider>
           </ProtectedRoute>
         }
       />
