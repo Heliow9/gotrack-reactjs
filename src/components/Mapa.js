@@ -47,16 +47,24 @@ const Mapa = () => {
   const CameraController = () => {
     const { selectedPosition } = useMapContext();
     const map = useMap();
-
-    useEffect(() => { 
-      console.log(selectedPosition)
+  
+    useEffect(() => {
       if (selectedPosition) {
-        map.flyTo(selectedPosition, 17, { duration: 1.5 });
+        const pedidoEncontrado = pedidos.find(
+          (pedido) => pedido._id === selectedPosition
+        );
+  
+        if (pedidoEncontrado) {
+          map.flyTo([pedidoEncontrado.latitude, pedidoEncontrado.longitude], 15, {
+            duration: 1.5,
+          });
+        }
       }
-    }, [selectedPosition, map]);
-
+    }, [selectedPosition, map, pedidos]);
+  
     return null;
   };
+    
 
 
 
@@ -152,12 +160,13 @@ const Mapa = () => {
       );
 
       setPedidos(geocodificados.filter(Boolean));
-      console.log(pedidos)
+    
     };
 
     if (restauranteId) {
       geocodificarPedidos();
     }
+    console.log(pedidos)
   }, [restauranteId]);
 
 

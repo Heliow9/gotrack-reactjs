@@ -175,7 +175,7 @@ const PedidosEmAndamento = () => {
       <List>
         {pedidosFake.map((pedido) => (
           <Paper
-            onClick={() => setSelectedPosition(pedido.localizacao)}
+            onClick={() => setSelectedPosition(pedido._id)}
             key={pedido._id}
             elevation={4}
             sx={{
