@@ -37,23 +37,23 @@ function Login() {
       localStorage.setItem('_id', response.data.restaurante._id);
       navigate('/');
     } catch (err) {
-      setErro(err.response?.data?.mensagem || 'Erro ao fazer login');
+      setErro(console.log(err));
     } finally {
       setLoading(false);
     }
   };
 
   return (
-<Box
-  display="flex"
-  justifyContent="center"
-  alignItems="center"
-  minHeight="100vh"
-  sx={{
-    background: 'linear-gradient(to bottom right, #ffffff, #f2f2f2)',
-    padding: 2,
-  }}
->
+    <Box
+      display="flex"
+      justifyContent="center"
+      alignItems="center"
+      minHeight="100vh"
+      sx={{
+        background: 'linear-gradient(to bottom right, #ffffff, #f2f2f2)',
+        padding: 2,
+      }}
+    >
 
       <Paper
         elevation={4}
