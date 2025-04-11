@@ -4,7 +4,7 @@ import 'mapbox-gl/dist/mapbox-gl.css';
 import io from 'socket.io-client';
 import axios from 'axios';
 import { useMapContext } from '../Context/MapContext';
-import { pedidosFake } from './PedidosEmAndamento';
+
 
 import capacete from '../assets/helmet.png';
 import restaurantePin from '../assets/restaurantPin.png';
@@ -18,7 +18,8 @@ const Mapa = () => {
   const [restauranteData, setRestauranteData] = useState(null);
   const [pedidos, setPedidos] = useState([]);
   const mapRef = useRef();
-  const { selectedPosition } = useMapContext();
+  const { selectedPosition, pedidosMap } = useMapContext();
+
 
   useEffect(() => {
     const fetchRestaurante = async () => {
@@ -63,26 +64,25 @@ const Mapa = () => {
 
     return () => socket.disconnect();
   }, [restauranteId]);
-
+  console.log(pedidosMap)
   useEffect(() => {
     const geocodificarPedidos = async () => {
-      const pedidosDoRestaurante = pedidosFake.filter(
-        (p) => p.restauranteId === restauranteId
-      );
+      if (!pedidosMap || pedidosMap.length === 0) return;
+     
 
       const geocodificados = await Promise.all(
-        pedidosDoRestaurante.map(async (pedido) => {
+        pedidosMap.map(async (pedido) => {
           try {
             const response = await axios.get(
               `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(pedido.enderecoCliente)}.json`,
               {
                 params: {
-                  access_token: 'pk.eyJ1IjoiaGVsaW93OSIsImEiOiJjbTZrM2E4dWYwOGRlMmxvbHU3cWxpbWd1In0.K3uVvrfToT60yREcOfGdfw',
+                  access_token: 'pk.eyJ1IjoiaGVsaW93OSIsImEiOiJjbTljNDRnazgwZ3BmMmxwdW9nbWk1c3ZmIn0.NR96Um-T_CqTI3jDb7c2OQ',
                   limit: 1,
                 },
               }
             );
-
+            console.log(response)
             if (response.data.features && response.data.features.length > 0) {
               const [lon, lat] = response.data.features[0].geometry.coordinates;
               return {
@@ -106,7 +106,7 @@ const Mapa = () => {
     if (restauranteId) {
       geocodificarPedidos();
     }
-  }, [restauranteId]);
+  }, [restauranteId, pedidosMap]);
 
   // Centralizar quando selecionar um pedido
   useEffect(() => {
@@ -123,7 +123,7 @@ const Mapa = () => {
 
   // Obter centro aproximado de todos os pontos
   const getMapCenter = () => {
-    console.log('funcionou')
+
     const pontos = [
       ...motoristas,
       ...pedidos,
@@ -139,13 +139,21 @@ const Mapa = () => {
 
     return [avgLon, avgLat];
   };
-  console.log(restauranteData)
+
   return (
     restauranteData &&
-    <div style={{ height: '600px', width: '100%', flex: 0, display: 'flex'}}>
+    <div style={{
+      flex: 1,
+      display: 'flex',
+      justifyContent: 'center',
+      alignItems: 'center',
+      height: '100%', // ocupa 100% da altura da tela
+      width: '100%',  // ocupa 100% da largura da tela
+      overflow: 'hidden', // impede qualquer barra de rolagem
+    }}>
       <Map
         ref={mapRef}
-        initialViewState={{ 
+        initialViewState={{
           longitude: restauranteData.localizacao.longitude,
           latitude: restauranteData.localizacao.latitude,
           zoom: 14,
@@ -171,7 +179,7 @@ const Mapa = () => {
           </Marker>
         ))}
 
-        {pedidos
+        {pedidos.length > 0 ? pedidos
           .filter(p => !isNaN(p.latitude) && !isNaN(p.longitude)) // <- importante!
           .map((p) => (
             <Marker key={p._id} longitude={p.longitude} latitude={p.latitude}>
@@ -184,8 +192,8 @@ const Mapa = () => {
                 <strong>Pedido:</strong> {p.nomeCliente}
               </Popup>
             </Marker>
-          ))}
-  
+          )) : null}
+
       </Map>
     </div>
   );

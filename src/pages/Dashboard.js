@@ -16,7 +16,7 @@ const Dashboard = () => {
   const isMobile = useMediaQuery(theme.breakpoints.down("sm")); // <600px
 
   return (
-    <Container maxWidth="xl" sx={{ py: 4 }}>
+    <Container maxWidth="x1" >
       <Box
         display="flex"
         flexDirection={isMobile ? "column" : "row"}
@@ -25,8 +25,8 @@ const Dashboard = () => {
         mb={3}
         gap={2}
       >
-        <Typography variant="h5" fontWeight="bold">
-          Mapa de Entregadores
+        <Typography variant="h6" fontWeight="bold">
+         Painel de Entregadores
         </Typography>
 
         <Button
