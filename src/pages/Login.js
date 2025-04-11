@@ -28,7 +28,7 @@ function Login() {
 
     setLoading(true);
     try {
-      const response = await axios.post('https://gotrack-app.onrender.com/api/restaurantes/login', {
+      const response = await axios.post('https://gotrackapi.onrender.com/api/restaurantes/login', {
         email,
         senha,
       });
