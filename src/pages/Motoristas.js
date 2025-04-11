@@ -28,12 +28,16 @@ import AddIcon from "@mui/icons-material/Add";
 import SearchIcon from "@mui/icons-material/Search";
 import axios from 'axios'; // Certifique-se de importar o axios no topo
 import DeleteIcon from '@mui/icons-material/Delete';
+import LockResetIcon from '@mui/icons-material/LockReset';
 
 const Motoristas = () => {
   const [motoristas, setMotoristas] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
+  const [modalSenhaAberto, setModalSenhaAberto] = useState(false);
+  const [motoristaSelecionado, setMotoristaSelecionado] = useState(null);
+  const [novaSenha, setNovaSenha] = useState("");
 
   // Modal
   const [open, setOpen] = useState(false);
@@ -134,6 +138,26 @@ const Motoristas = () => {
     }
   };
 
+  const handleTrocarSenha = async () => {
+    const token = localStorage.getItem("token");
+
+    try {
+      await axios.put(
+        `https://gotrackapi.onrender.com/entregadores/${motoristaSelecionado._id}/senha`,
+        { novaSenha },
+        { headers: { Authorization: token } }
+      );
+
+      setSnackbar({ open: true, message: "Senha atualizada com sucesso!", severity: "success" });
+      setModalSenhaAberto(false);
+      setNovaSenha("");
+    } catch (error) {
+      console.error("Erro ao trocar senha:", error);
+      setSnackbar({ open: true, message: "Erro ao atualizar senha.", severity: "error" });
+    }
+  };
+
+
 
 
 
@@ -145,6 +169,12 @@ const Motoristas = () => {
     .filter((moto) =>
       statusFilter ? moto.statusConta === statusFilter : true
     );
+
+
+  const abrirModalTrocarSenha = (motorista) => {
+    setMotoristaSelecionado(motorista);
+    setModalSenhaAberto(true);
+  };
 
   return (
     <Container>
@@ -221,16 +251,29 @@ const Motoristas = () => {
                         color={moto.statusConta === "ativo" ? "success" : "default"}
                       />
                     </TableCell>
-                    <Button
-                      variant="outlined"
-                      color="error"
-                      size="small"
-                      onClick={() => handleExcluir(moto._id)}
-                      startIcon={<DeleteIcon />}
+                    <TableCell align="center" sx={{ display: 'flex', justifyContent: 'center', flexDirection: 'column' }}>
+                      <Button
+                        variant="outlined"
+                        color="error"
+                        size="small"
+                        onClick={() => handleExcluir(moto._id)}
+                        startIcon={<DeleteIcon />}
+                      >
+                        Excluir
+                      </Button>
+                      <Button
+                        variant="outlined"
+                        color="primary"
+                        size="small"
+                        onClick={() => abrirModalTrocarSenha(moto)}
+                        startIcon={<LockResetIcon />}
+                      // sx={{ ml: 1 }}
+                      >
+                        Trocar Senha
+                      </Button>
 
-                    >
-                      Excluir
-                    </Button>
+
+                    </TableCell>
                   </TableRow>
                 ))
               ) : (
@@ -284,6 +327,25 @@ const Motoristas = () => {
           <Button onClick={handleCadastrar} variant="contained" color="primary">Cadastrar</Button>
         </DialogActions>
       </Dialog>
+
+      <Dialog open={modalSenhaAberto} onClose={() => setModalSenhaAberto(false)}>
+        <DialogTitle>Trocar senha de {motoristaSelecionado?.nome}</DialogTitle>
+        <DialogContent>
+          <TextField
+            label="Nova Senha"
+            type="password"
+            fullWidth
+            margin="normal"
+            value={novaSenha}
+            onChange={(e) => setNovaSenha(e.target.value)}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setModalSenhaAberto(false)}>Cancelar</Button>
+          <Button variant="contained" onClick={handleTrocarSenha}>Atualizar</Button>
+        </DialogActions>
+      </Dialog>
+
 
       {/* Snackbar */}
       <Snackbar
