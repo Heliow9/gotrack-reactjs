@@ -11,7 +11,9 @@ import {
   Divider,
   Box,
   Collapse,
+  useMediaQuery,
 } from "@mui/material";
+import { useTheme } from "@mui/material/styles";
 import {
   FaHome,
   FaClipboardList,
@@ -25,10 +27,13 @@ import PedidosEmAndamento from "./PedidosEmAndamento";
 
 const Sidebar = () => {
   const [mostrarPedidos, setMostrarPedidos] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
   const location = useLocation();
 
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down("md"));
+
   useEffect(() => {
-    // Oculta menu após 10s ao chegar no dashboard
     if (location.pathname === "/") {
       const timer = setTimeout(() => {
         setMostrarPedidos(true);
@@ -37,21 +42,14 @@ const Sidebar = () => {
     }
   }, [location.pathname]);
 
-  return (
-    <Drawer
-      variant="permanent"
-      sx={{
-        width: 370,
-        flexShrink: 0,
-        [`& .MuiDrawer-paper`]: {
-          width: 370,
-          boxSizing: "border-box",
-          padding: 2,
-          backgroundColor: "#ff7b00",
-        },
-      }}
-    >
-      <Box display="flex" alignItems="center" justifyContent="space-around" >
+  const drawerContent = (
+    <Box sx={{ padding: 2, backgroundColor: "#ff7b00", height: "100%" }}>
+      <Box
+        display="flex"
+        alignItems="center"
+        justifyContent="space-between"
+        mb={2}
+      >
         <Typography variant="h6" sx={{ fontWeight: "bold" }} color="white">
           GoTrack
         </Typography>
@@ -64,57 +62,104 @@ const Sidebar = () => {
         </IconButton>
       </Box>
 
-      <Divider sx={{ my: 2 }} />
+      <Divider sx={{ mb: 2, borderColor: "#fff" }} />
 
       <Collapse in={!mostrarPedidos}>
-  <List>
-    <ListItem button component={Link} to="/">
-      <ListItemIcon>
-        <FaHome style={{ color: "#fff" }} />
-      </ListItemIcon>
-      <ListItemText
-        primary="Dashboard"
-        primaryTypographyProps={{ style: { color: "#fff" } }}
-      />
-    </ListItem>
+        <List>
+          <ListItem button component={Link} to="/">
+            <ListItemIcon>
+              <FaHome style={{ color: "#fff" }} />
+            </ListItemIcon>
+            <ListItemText
+              primary="Dashboard"
+              primaryTypographyProps={{ style: { color: "#fff" } }}
+            />
+          </ListItem>
 
-    <ListItem button component={Link} to="/pedidos">
-      <ListItemIcon>
-        <FaClipboardList style={{ color: "#fff" }} />
-      </ListItemIcon>
-      <ListItemText
-        primary="Pedidos"
-        primaryTypographyProps={{ style: { color: "#fff" } }}
-      />
-    </ListItem>
+          <ListItem button component={Link} to="/pedidos">
+            <ListItemIcon>
+              <FaClipboardList style={{ color: "#fff" }} />
+            </ListItemIcon>
+            <ListItemText
+              primary="Pedidos"
+              primaryTypographyProps={{ style: { color: "#fff" } }}
+            />
+          </ListItem>
 
-    <ListItem button component={Link} to="/motoristas">
-      <ListItemIcon>
-        <FaMotorcycle style={{ color: "#fff" }} />
-      </ListItemIcon>
-      <ListItemText
-        primary="Motoristas"
-        primaryTypographyProps={{ style: { color: "#fff" } }}
-      />
-    </ListItem>
+          <ListItem button component={Link} to="/motoristas">
+            <ListItemIcon>
+              <FaMotorcycle style={{ color: "#fff" }} />
+            </ListItemIcon>
+            <ListItemText
+              primary="Motoristas"
+              primaryTypographyProps={{ style: { color: "#fff" } }}
+            />
+          </ListItem>
 
-    <ListItem button component={Link} to="/configuracoes">
-      <ListItemIcon>
-        <FaCog style={{ color: "#fff" }} />
-      </ListItemIcon>
-      <ListItemText
-        primary="Configurações"
-        primaryTypographyProps={{ style: { color: "#fff" } }}
-      />
-    </ListItem>
-  </List>
-</Collapse>
-
+          <ListItem button component={Link} to="/configuracoes">
+            <ListItemIcon>
+              <FaCog style={{ color: "#fff" }} />
+            </ListItemIcon>
+            <ListItemText
+              primary="Configurações"
+              primaryTypographyProps={{ style: { color: "#fff" } }}
+            />
+          </ListItem>
+        </List>
+      </Collapse>
 
       <Collapse in={mostrarPedidos}>
         <PedidosEmAndamento />
       </Collapse>
-    </Drawer>
+    </Box>
+  );
+
+  return (
+    <>
+      {isMobile ? (
+        <>
+          <IconButton
+            color="inherit"
+            onClick={() => setMobileOpen(!mobileOpen)}
+            sx={{ position: "absolute", top: 16, left: 16, zIndex: 1300 }}
+          >
+            <FaBars />
+          </IconButton>
+
+          <Drawer
+            variant="temporary"
+            open={mobileOpen}
+            onClose={() => setMobileOpen(false)}
+            ModalProps={{
+              keepMounted: true,
+            }}
+            sx={{
+              [`& .MuiDrawer-paper`]: {
+                width: 260,
+                backgroundColor: "#ff7b00",
+              },
+            }}
+          >
+            {drawerContent}
+          </Drawer>
+        </>
+      ) : (
+        <Drawer
+          variant="permanent"
+          sx={{
+            width: 300,
+            flexShrink: 0,
+            [`& .MuiDrawer-paper`]: {
+              width: 300,
+              boxSizing: "border-box",
+              backgroundColor: "#ff7b00",
+            },
+          }}
+        >
+          {drawerContent}
+        </Drawer>
+      )}
+    </>
   );
 };
 

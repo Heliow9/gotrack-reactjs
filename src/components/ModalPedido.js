@@ -2,8 +2,12 @@ import React, { useState } from "react";
 import { buscarEndereco } from "../utils/buscaEndereco";
 import MiniMapa from "./MiniMapa";
 import "./ModalPedido.css";
+import { Box, Button, Typography, useMediaQuery, useTheme } from "@mui/material";
 
 const ModalPedido = ({ isOpen, onClose }) => {
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
+
   const [sugestoesEndereco, setSugestoesEndereco] = useState([]);
 
   const [formData, setFormData] = useState({
@@ -55,19 +59,26 @@ const ModalPedido = ({ isOpen, onClose }) => {
   return (
     <div className="modal-overlay">
       <div className="modal-content">
-        <h3>Novo Pedido</h3>
+        <Typography variant="h6" gutterBottom>
+          Novo Pedido
+        </Typography>
         <form onSubmit={handleSubmit}>
-          <div className="form-columns">
-            <div className="form-column">
+          <Box
+            display="flex"
+            flexDirection={isMobile ? "column" : "row"}
+            gap={3}
+            className="form-columns"
+          >
+            <Box flex={1} display="flex" flexDirection="column" gap={1}>
               <input name="numeroPedido" placeholder="Número do Pedido" onChange={handleChange} onKeyDown={(e) => e.key === "Enter" && e.preventDefault()} />
               <input name="nome" placeholder="Nome do Cliente" onChange={handleChange} onKeyDown={(e) => e.key === "Enter" && e.preventDefault()} />
-              <input name="telefone" placeholder="Telefone" onChange={handleChange}  onKeyDown={(e) => e.key === "Enter" && e.preventDefault()}/>
-              <input name="valor" placeholder="Valor do Pedido" onChange={handleChange} onKeyDown={(e) => e.key === "Enter" && e.preventDefault()} />
-              <input name="pagamento" placeholder="Forma de Pagamento" onChange={handleChange} onKeyDown={(e) => e.key === "Enter" && e.preventDefault()}/>
-              <textarea name="descricao" placeholder="Descrição do Pedido" onChange={handleChange} onKeyDown={(e) => e.key === "Enter" && e.preventDefault()}/>
-            </div>
+              <input name="telefone" placeholder="Telefone" onChange={handleChange} onKeyDown={(e) => e.key === "Enter" && e.preventDefault()} />
+              <input name="valor" placeholder="Valor do Pedido" onChange={handleChange}   onKeyDown={(e) => e.key === "Enter" && e.preventDefault()}/>
+              <input name="pagamento" placeholder="Forma de Pagamento" onChange={handleChange} onKeyDown={(e) => e.key === "Enter" && e.preventDefault()} />
+              <textarea name="descricao" placeholder="Descrição do Pedido" onChange={handleChange} onKeyDown={(e) => e.key === "Enter" && e.preventDefault()} />
+            </Box>
 
-            <div className="form-column">
+            <Box flex={1} display="flex" flexDirection="column" gap={1}>
               <div className="autocomplete-container">
                 <input
                   name="endereco"
@@ -90,7 +101,6 @@ const ModalPedido = ({ isOpen, onClose }) => {
                       setSugestoesEndereco([]);
                     }
                   }}
-                  
                 />
                 {sugestoesEndereco.length > 0 && (
                   <ul className="sugestoes-lista">
@@ -99,8 +109,12 @@ const ModalPedido = ({ isOpen, onClose }) => {
                         key={item.id}
                         onClick={() => {
                           const [lng, lat] = item.center;
-                          const bairro = item.context?.find((ctx) => ctx.id.includes("neighborhood"))?.text || "";
-                          const cep = item.context?.find((ctx) => ctx.id.includes("postcode"))?.text || "";
+                          const bairro = item.context?.find((ctx) =>
+                            ctx.id.includes("neighborhood")
+                          )?.text || "";
+                          const cep = item.context?.find((ctx) =>
+                            ctx.id.includes("postcode")
+                          )?.text || "";
 
                           setFormData((prev) => ({
                             ...prev,
@@ -124,20 +138,24 @@ const ModalPedido = ({ isOpen, onClose }) => {
               <input name="complemento" placeholder="Complemento" onChange={handleChange} onKeyDown={(e) => e.key === "Enter" && e.preventDefault()} />
               <input name="pontoReferencia" placeholder="Ponto de Referência" onChange={handleChange} onKeyDown={(e) => e.key === "Enter" && e.preventDefault()} />
               <input value={formData.bairro || ""} placeholder="Bairro" readOnly onKeyDown={(e) => e.key === "Enter" && e.preventDefault()} />
-              <input value={formData.cep || ""} placeholder="CEP" readOnly  onKeyDown={(e) => e.key === "Enter" && e.preventDefault()}/>
+              <input value={formData.cep || ""} placeholder="CEP" readOnly onKeyDown={(e) => e.key === "Enter" && e.preventDefault()} />
 
               {formData.latitude && formData.longitude && (
                 <div className="map-container">
                   <MiniMapa latitude={formData.latitude} longitude={formData.longitude} />
                 </div>
               )}
-            </div>
-          </div>
+            </Box>
+          </Box>
 
-          <div className="modal-buttons">
-            <button type="button" onClick={onClose}>Fechar</button>
-            <button type="submit">Salvar Pedido</button>
-          </div>
+          <Box display="flex" justifyContent="flex-end" gap={2} mt={3}>
+            <Button onClick={onClose} variant="outlined">
+              Fechar
+            </Button>
+            <Button type="submit" variant="contained" sx={{ backgroundColor: "#ff7b00" }}>
+              Salvar Pedido
+            </Button>
+          </Box>
         </form>
       </div>
     </div>
