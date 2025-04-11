@@ -2,7 +2,7 @@ import React, { useEffect, useRef } from "react";
 import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
 
-mapboxgl.accessToken = "SUA_CHAVE_DO_MAPBOX"; // Substitua aqui
+mapboxgl.accessToken = "pk.eyJ1IjoiaGVsaW93OSIsImEiOiJjbTljNDRnazgwZ3BmMmxwdW9nbWk1c3ZmIn0.NR96Um-T_CqTI3jDb7c2OQ"; // Substitua aqui
 
 const MiniMapa = ({ latitude, longitude }) => {
   const mapRef = useRef(null);

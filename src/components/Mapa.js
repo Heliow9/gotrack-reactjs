@@ -10,7 +10,7 @@ import capacete from '../assets/helmet.png';
 import restaurantePin from '../assets/restaurantPin.png';
 
 const apiUrl = 'https://gotrackapi.onrender.com';
-const MAPBOX_TOKEN = 'pk.eyJ1IjoiaGVsaW93OSIsImEiOiJjbTZrM2E4dWYwOGRlMmxvbHU3cWxpbWd1In0.K3uVvrfToT60yREcOfGdfw'; // <-- Substitua por sua chave da Mapbox
+const MAPBOX_TOKEN = 'pk.eyJ1IjoiaGVsaW93OSIsImEiOiJjbTljNDRnazgwZ3BmMmxwdW9nbWk1c3ZmIn0.NR96Um-T_CqTI3jDb7c2OQ'; // <-- Substitua por sua chave da Mapbox
 
 const Mapa = () => {
   const [motoristas, setMotoristas] = useState([]);

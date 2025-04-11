@@ -1,27 +1,28 @@
-const MAPBOX_TOKEN = "SUA_CHAVE_DO_MAPBOX"; // Substitua aqui
+// utils/buscaEndereco.js
+export const buscarEndereco = async (enderecoParcial) => {
+  const token = "pk.eyJ1IjoiaGVsaW93OSIsImEiOiJjbTljNDRnazgwZ3BmMmxwdW9nbWk1c3ZmIn0.NR96Um-T_CqTI3jDb7c2OQ"; // substitua pelo seu token público da Mapbox
 
-export const buscarEndereco = async (endereco) => {
   try {
     const response = await fetch(
-      `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(endereco)}.json?access_token=${MAPBOX_TOKEN}&limit=1`
+      `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(enderecoParcial)}.json?access_token=${token}&country=BR&autocomplete=true&limit=5`
     );
-    const data = await response.json();
-    if (data.features && data.features.length > 0) {
-      const lugar = data.features[0];
-      const contexto = lugar.context || [];
-      const bairro = contexto.find((c) => c.id.includes("neighborhood"))?.text || "";
-      const cep = contexto.find((c) => c.id.includes("postcode"))?.text || "";
 
-      return {
-        latitude: lugar.center[1],
-        longitude: lugar.center[0],
-        bairro,
-        cep,
-      };
+    if (!response.ok) {
+      throw new Error("Erro ao buscar endereço na Mapbox");
     }
-    return null;
+
+    const data = await response.json();
+
+    // retorna as sugestões encontradas
+    return data.features.map((feature) => ({
+      label: feature.place_name,
+      cep: feature.context?.find(c => c.id.includes('postcode'))?.text || '',
+      bairro: feature.context?.find(c => c.id.includes('neighborhood') || c.id.includes('place'))?.text || '',
+      latitude: feature.center[1],
+      longitude: feature.center[0],
+    }));
   } catch (error) {
-    console.error("Erro ao buscar endereço:", error);
-    return null;
+    console.error("Erro na busca do endereço:", error);
+    return [];
   }
 };
