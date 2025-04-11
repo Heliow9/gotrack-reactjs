@@ -1,32 +1,15 @@
 import React, { useState } from 'react';
-import {
-  TextField,
-  Button,
-  Paper,
-  Typography,
-  Box,
-  Alert,
-  CircularProgress
-} from '@mui/material';
-import { useNavigate } from 'react-router-dom';
+import { TextField, Button, Paper, Typography, Box, Alert } from '@mui/material';
 import axios from 'axios';
-import logo from '../assets/Logo gotrack.png'; // <- ajuste esse caminho se necessário
+import { useNavigate } from 'react-router-dom';
 
 function Login() {
   const [email, setEmail] = useState('');
   const [senha, setSenha] = useState('');
   const [erro, setErro] = useState('');
-  const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
   const handleLogin = async () => {
-    setErro('');
-    if (!email || !senha) {
-      setErro('Preencha todos os campos');
-      return;
-    }
-
-    setLoading(true);
     try {
       const response = await axios.post('https://gotrack-app.onrender.com/api/restaurantes/login', {
         email,
@@ -35,11 +18,9 @@ function Login() {
 
       localStorage.setItem('token', response.data.token);
       localStorage.setItem('_id', response.data.restaurante._id);
-      navigate('/');
+      navigate('/'); // redireciona para o painel após login
     } catch (err) {
-      setErro(console.log(err));
-    } finally {
-      setLoading(false);
+      setErro(err.response?.data?.mensagem || 'Erro ao fazer login');
     }
   };
 
@@ -48,34 +29,11 @@ function Login() {
       display="flex"
       justifyContent="center"
       alignItems="center"
-      minHeight="100vh"
-      sx={{
-        background: 'linear-gradient(to bottom right, #ffffff, #f2f2f2)',
-        padding: 2,
-      }}
+      height="100vh"
+      bgcolor="#f5f5f5"
     >
-
-      <Paper
-        elevation={4}
-        sx={{
-          padding: 4,
-          width: '100%',
-          maxWidth: 400,
-          borderRadius: 3,
-          textAlign: 'center',
-          backgroundColor: '#fff',
-        }}
-      >
-        {/* LOGO */}
-        <Box mb={3}>
-          <img
-            src={logo}
-            alt="GoTrack Logo"
-            style={{ width: '150px', objectFit: 'contain' }}
-          />
-        </Box>
-
-        <Typography variant="h6" gutterBottom sx={{ fontWeight: 'bold', color: '#ff7b00' }}>
+      <Paper elevation={3} sx={{ padding: 4, width: 350 }}>
+        <Typography variant="h5" align="center" gutterBottom>
           Login do Restaurante
         </Typography>
 
@@ -87,7 +45,6 @@ function Login() {
 
         <TextField
           label="Email"
-          placeholder="exemplo@email.com"
           fullWidth
           margin="normal"
           value={email}
@@ -96,7 +53,6 @@ function Login() {
         <TextField
           label="Senha"
           type="password"
-          placeholder="********"
           fullWidth
           margin="normal"
           value={senha}
@@ -105,20 +61,12 @@ function Login() {
 
         <Button
           variant="contained"
+          color="primary"
           fullWidth
-          sx={{
-            mt: 3,
-            py: 1.5,
-            fontWeight: 'bold',
-            backgroundColor: '#ff7b00',
-            '&:hover': {
-              backgroundColor: '#ff7b10',
-            },
-          }}
+          sx={{ mt: 2 }}
           onClick={handleLogin}
-          disabled={loading}
         >
-          {loading ? <CircularProgress size={24} color="inherit" /> : 'Entrar'}
+          Entrar
         </Button>
       </Paper>
     </Box>
