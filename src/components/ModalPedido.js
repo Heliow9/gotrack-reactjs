@@ -3,10 +3,12 @@ import { buscarEndereco } from "../utils/buscaEndereco";
 import MiniMapa from "./MiniMapa";
 import "./ModalPedido.css";
 import { Box, Button, Typography, useMediaQuery, useTheme, TextField, MenuItem } from "@mui/material";
-
+import { usePedidos } from '../Context/PedidosContext';
 
 
 const ModalPedido = ({ isOpen, onClose }) => {
+  const { triggerAtualizacao } = usePedidos();
+
   const restauranteId = localStorage.getItem('_id')
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
@@ -129,6 +131,7 @@ const ModalPedido = ({ isOpen, onClose }) => {
 
       if (response.ok) {
         alert("Pedido salvo com sucesso!");
+        triggerAtualizacao()
         onClose(); // fecha o modal
       } else {
         console.error("Erro ao salvar pedido:", result);

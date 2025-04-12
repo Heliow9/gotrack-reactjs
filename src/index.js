@@ -5,6 +5,7 @@ import App from "./App";
 import Login from "./pages/Login";
 import ProtectedRoute from "../src/components/ProtectedRoute";
 import { MapProvider } from './Context/MapContext'
+import { PedidosProvider } from "./Context/PedidosContext";
 const root = ReactDOM.createRoot(document.getElementById("root"));
 root.render(
   <BrowserRouter>
@@ -15,7 +16,9 @@ root.render(
         element={
           <ProtectedRoute>
             <MapProvider>
-              <App />
+              <PedidosProvider>
+                <App />
+              </PedidosProvider>
             </MapProvider>
           </ProtectedRoute>
         }
