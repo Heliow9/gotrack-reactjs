@@ -119,7 +119,7 @@ const ModalPedido = ({ isOpen, onClose }) => {
     };
 
     try {
-      const response = await fetch("http://localhost:10000/api/pedidos", {
+      const response = await fetch("https://gotrackapi.onrender.com/api/pedidos", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
