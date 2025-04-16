@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import {
   Typography,
   List,
@@ -13,20 +13,70 @@ import { FaMapMarkerAlt, FaPhone, FaMoneyBillWave } from "react-icons/fa";
 import { useMapContext } from "../Context/MapContext";
 import axios from "axios";
 import { usePedidos } from "../Context/PedidosContext";
-import io from "socket.io-client";
+import { io } from "socket.io-client";
 
 const PedidosEmAndamento = () => {
   const { setSelectedPosition, setPedidosMap } = useMapContext();
   const [pedidos, setPedidos] = useState([]);
   const [isSendingPedido, setIsSendingPedido] = useState({});
   const [deliverers, setDeliverers] = useState([]);
-  const [anchorEl, setAnchorEl] = useState({}); // Um anchorEl por pedido
-  const [selectedDeliverer, setSelectedDeliverer] = useState({}); // Seleção por pedido
-  const [isOnline, setIsOnline] = useState(false); // Controle de status online do entregador
+  const [anchorEl, setAnchorEl] = useState({});
+  const [selectedDeliverer, setSelectedDeliverer] = useState({});
+  const { atualizarPedidos } = usePedidos();
+  const socket = useRef(null);
 
   const restauranteId = localStorage.getItem("_id");
-  const socket = io("https://gotrackapi.onrender.com");
-  const { atualizarPedidos } = usePedidos();
+
+  useEffect(() => {
+    socket.current = io("https://gotrackapi.onrender.com");
+
+    socket.current.on("connect", () => {
+      console.log("✅ [Dashboard] Socket conectado:", socket.current.id);
+      socket.current.emit("joinRestaurante", { restauranteId });
+
+// Força atualização após 2 segundos
+setTimeout(() => {
+  socket.current.emit("joinRestaurante", { restauranteId });
+  console.log("🔁 Reemissão manual de joinRestaurante para garantir entrega");
+}, 2000);
+
+    });
+
+    socket.current.on("connect_error", (err) => {
+      console.error("❌ Erro na conexão com socket:", err.message);
+    });
+
+    socket.current.on("deliverersOnline", (data) => {
+      console.log("📡 Lista recebida via deliverersOnline:", JSON.stringify(data, null, 2));
+      console.log("📦 Tipo da lista recebida:", typeof data);
+      console.log("📦 É array?", Array.isArray(data));
+      if (Array.isArray(data)) {
+        data.forEach((d, i) =>
+          console.log(`🚚 Entregador ${i}:`, d, "status:", d.status)
+        );
+      }
+      console.log("📡 Lista recebida via deliverersOnline:", JSON.stringify(data, null, 2));
+      console.log("📦 Tipo da lista recebida:", typeof data);
+      console.log("📦 É array?", Array.isArray(data));
+      if (Array.isArray(data)) {
+        data.forEach((d, i) =>
+          console.log(`🚚 Entregador ${i}:`, d, "status:", d.status)
+        );
+      }
+
+      const available = Array.isArray(data)
+        ? data.filter((d) => d.status === true)
+        : [];
+
+      setDeliverers(available);
+      console.log("🟢 Entregadores disponíveis:", available);
+    });
+
+    return () => {
+      socket.current.disconnect();
+      console.log("🔌 Socket do dashboard desconectado");
+    };
+  }, [restauranteId]);
 
   useEffect(() => {
     async function handlerGetPedidos() {
@@ -34,40 +84,25 @@ const PedidosEmAndamento = () => {
         const response = await axios.get(
           `https://gotrackapi.onrender.com/api/pedidos/${restauranteId}`
         );
+        console.log("📦 Pedidos recebidos:", response.data);
         setPedidos(response.data);
         setPedidosMap(response.data);
       } catch (error) {
-        console.error("Erro ao buscar pedidos:", error);
+        console.error("❌ Erro ao buscar pedidos:", error);
       }
     }
 
     handlerGetPedidos();
   }, [restauranteId, atualizarPedidos]);
 
-  useEffect(() => {
-    socket.emit("getDeliverersOnline");
-
-    socket.on("deliverersOnline", (data) => {
-      const availableDeliverers = data.filter((d) => d.status === "true");
-      setDeliverers(availableDeliverers);
-    });
-
-    // Emitindo evento para quando o entregador entrar online
-    socket.emit("joinRestaurante", { restauranteId });
-    socket.emit("joinEntregador", { entregadorId: restauranteId });
-
-    return () => {
-      socket.off("deliverersOnline");
-      socket.off("joinRestaurante");
-      socket.off("joinEntregador");
-    };
-  }, []);
-
   const enviarParaEntregador = (pedidoId) => {
     const deliverer = selectedDeliverer[pedidoId];
-    if (deliverer) {
+    if (deliverer && socket.current) {
       setIsSendingPedido((prev) => ({ ...prev, [pedidoId]: true }));
-      socket.emit("enviarPedido", {
+
+      console.log(`📤 Enviando pedido ${pedidoId} para ${deliverer.nome}`);
+
+      socket.current.emit("enviarPedido", {
         pedidoId,
         delivererId: deliverer._id,
         restauranteId,
@@ -80,13 +115,13 @@ const PedidosEmAndamento = () => {
               status: "Pendente",
             })
             .then(() => {
-              console.log("Pedido retornado para 'Pendente'");
+              console.log("⏱️ Pedido retornado para 'Pendente'");
               setIsSendingPedido((prev) => ({ ...prev, [pedidoId]: false }));
               atualizarPedidos();
             })
-            .catch((err) => console.error("Erro ao atualizar o pedido:", err));
+            .catch((err) => console.error("❌ Erro ao atualizar pedido:", err));
         }
-      }, 120000); // 2 minutos de timeout
+      }, 120000);
     }
   };
 
@@ -99,6 +134,7 @@ const PedidosEmAndamento = () => {
   };
 
   const handleDelivererSelect = (pedidoId, deliverer) => {
+    console.log(`✅ Entregador selecionado para ${pedidoId}:`, deliverer);
     setSelectedDeliverer((prev) => ({ ...prev, [pedidoId]: deliverer }));
     handleMenuClose(pedidoId);
     enviarParaEntregador(pedidoId);
@@ -172,32 +208,21 @@ const PedidosEmAndamento = () => {
                   </Typography>
                 </Box>
               </Box>
-              {pedido.status === "pendente" && (
+              {pedido.status?.toLowerCase() === "pendente" && (
                 <Box mt={2}>
                   <Button
                     variant="contained"
                     color="primary"
                     onClick={(e) => handleMenuClick(e, pedido._id)}
-                    disabled={isSendingPedido[pedido._id] || deliverers.length === 0}
+                    disabled={!!isSendingPedido[pedido._id] || deliverers.length === 0}
                   >
                     {isSendingPedido[pedido._id]
                       ? "Enviando..."
                       : "Escolher Entregador"}
                   </Button>
-                  <Menu
-                    anchorEl={anchorEl[pedido._id] || null}
-                    open={Boolean(anchorEl[pedido._id])}
-                    onClose={() => handleMenuClose(pedido._id)}
-                  >
-                    {deliverers.map((deliverer) => (
-                      <MenuItem
-                        key={deliverer._id}
-                        onClick={() => handleDelivererSelect(pedido._id, deliverer)}
-                      >
-                        {deliverer.nome}
-                      </MenuItem>
-                    ))}
-                  </Menu>
+                  <Typography variant="caption" color="gray">
+                    {deliverers.length === 0 && "Nenhum entregador disponível"}
+                  </Typography>
                 </Box>
               )}
             </Paper>
@@ -208,6 +233,30 @@ const PedidosEmAndamento = () => {
           Nenhum pedido em andamento.
         </Typography>
       )}
+
+      {/* Menu para seleção de entregador */}
+      {pedidos.map((pedido) => (
+        <Menu
+          key={pedido._id}
+          anchorEl={anchorEl[pedido._id]}
+          open={Boolean(anchorEl[pedido._id])}
+          onClose={() => handleMenuClose(pedido._id)}
+        >
+          {deliverers.map((deliverer) => (
+            <MenuItem
+              key={deliverer._id}
+              onClick={() => handleDelivererSelect(pedido._id, deliverer)}
+            >
+              <Typography variant="body2">{deliverer.nome}</Typography>
+              {deliverer.localizacao && (
+                <Typography variant="caption" color="gray">
+                  {`Localização: ${deliverer.localizacao.latitude}, ${deliverer.localizacao.longitude}`}
+                </Typography>
+              )}
+            </MenuItem>
+          ))}
+        </Menu>
+      ))}
     </Box>
   );
 };

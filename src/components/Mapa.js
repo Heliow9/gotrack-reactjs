@@ -35,14 +35,14 @@ const Mapa = () => {
 
         const data = await response.json();
         setRestauranteId(data._id);
-        setRestauranteData(data);
+        setRestauranteData(data); 
       } catch (error) {
         console.error("Erro ao obter restaurante:", error);
       }
     };
 
     fetchRestaurante();
-  }, []);
+  }, [restauranteData]);
 
   useEffect(() => {
     if (!restauranteId) return;
