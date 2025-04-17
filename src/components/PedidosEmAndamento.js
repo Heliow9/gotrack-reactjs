@@ -55,6 +55,21 @@ const PedidosEmAndamento = () => {
       );
     });
 
+    socket.current.on("pedidoRecusado", (pedidoAtualizado) => {
+      console.log("🔄 Pedido recusado recebido no dashboard:", pedidoAtualizado);
+    
+      setPedidos((prev) =>
+        prev.map((p) => (p._id === pedidoAtualizado._id ? pedidoAtualizado : p))
+      );
+    
+      setIsSendingPedido((prev) => ({
+        ...prev,
+        [pedidoAtualizado._id]: false,
+      }));
+    });
+    
+    
+
     socket.current.on("connect_error", (err) => {
       console.error("❌ Erro na conexão com socket:", err.message);
     });
