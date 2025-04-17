@@ -34,12 +34,25 @@ const PedidosEmAndamento = () => {
       console.log("✅ [Dashboard] Socket conectado:", socket.current.id);
       socket.current.emit("joinRestaurante", { restauranteId });
 
-// Força atualização após 2 segundos
-setTimeout(() => {
-  socket.current.emit("joinRestaurante", { restauranteId });
-  console.log("🔁 Reemissão manual de joinRestaurante para garantir entrega");
-}, 2000);
 
+
+      // Força atualização após 2 segundos
+      setTimeout(() => {
+        socket.current.emit("joinRestaurante", { restauranteId });
+        console.log("🔁 Reemissão manual de joinRestaurante para garantir entrega");
+      }, 2000);
+
+    });
+
+    socket.current.on("pedidoAceito", (pedidoAtualizado) => {
+      console.log("✅ Pedido aceito recebido no dashboard:", pedidoAtualizado);
+
+      // Atualiza o estado local de pedidos (atualiza só o afetado)
+      setPedidos((prevPedidos) =>
+        prevPedidos.map((p) =>
+          p._id === pedidoAtualizado._id ? pedidoAtualizado : p
+        )
+      );
     });
 
     socket.current.on("connect_error", (err) => {
@@ -76,6 +89,7 @@ setTimeout(() => {
       socket.current.disconnect();
       console.log("🔌 Socket do dashboard desconectado");
     };
+    
   }, [restauranteId]);
 
   useEffect(() => {

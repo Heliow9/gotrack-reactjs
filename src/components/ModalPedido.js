@@ -10,6 +10,7 @@ const ModalPedido = ({ isOpen, onClose }) => {
   const { triggerAtualizacao } = usePedidos();
 
   const restauranteId = localStorage.getItem('_id')
+  const restaurante = localStorage.getItem('_id')
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
 
@@ -100,6 +101,7 @@ const ModalPedido = ({ isOpen, onClose }) => {
 
 
   async function handleRegisterPedido() {
+    console.log(restauranteId)
     const payload = {
       numeroPedido: formData.numeroPedido,
       nomeCliente: formData.nomeCliente,
@@ -115,7 +117,8 @@ const ModalPedido = ({ isOpen, onClose }) => {
       cep: formData.cep,
       latitude: formData.latitude,
       longitude: formData.longitude,
-      restauranteId, // já que você pegou do localStorage
+      restaurante, // já que você pegou do localStorage
+
     };
 
     try {
