@@ -114,12 +114,11 @@ const ModalPedido = ({ isOpen, onClose }) => {
       pontoReferencia: formData.pontoReferencia,
       bairro: formData.bairro,
       cep: formData.cep,
-      latitude: formData.latitude,
-      longitude: formData.longitude,
-      restaurante, // já que você pegou do localStorage
-
+      latitudeCliente: formData.latitude,     // 👈 necessário
+      longitudeCliente: formData.longitude,   // 👈 necessário
+      restaurante,
     };
-
+    
     try {
       const response = await fetch("https://gotrackapi.onrender.com/api/pedidos", {
         method: "POST",
