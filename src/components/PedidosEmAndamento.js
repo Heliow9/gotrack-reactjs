@@ -23,6 +23,9 @@ const PedidosEmAndamento = () => {
   const [anchorEl, setAnchorEl] = useState({});
   const [selectedDeliverer, setSelectedDeliverer] = useState({});
   const { atualizarPedidos } = usePedidos();
+  const [selectedPedidos, setSelectedPedidos] = useState([]);
+  const [anchorElMulti, setAnchorElMulti] = useState(null);
+  const pedidosPorEntregador = 3; // Pode vir da API futuramente
   const socket = useRef(null);
 
   const restauranteId = localStorage.getItem("_id");
@@ -57,18 +60,18 @@ const PedidosEmAndamento = () => {
 
     socket.current.on("pedidoRecusado", (pedidoAtualizado) => {
       console.log("🔄 Pedido recusado recebido no dashboard:", pedidoAtualizado);
-    
+
       setPedidos((prev) =>
         prev.map((p) => (p._id === pedidoAtualizado._id ? pedidoAtualizado : p))
       );
-    
+
       setIsSendingPedido((prev) => ({
         ...prev,
         [pedidoAtualizado._id]: false,
       }));
     });
-    
-    
+
+
 
     socket.current.on("connect_error", (err) => {
       console.error("❌ Erro na conexão com socket:", err.message);
@@ -104,7 +107,7 @@ const PedidosEmAndamento = () => {
       socket.current.disconnect();
       console.log("🔌 Socket do dashboard desconectado");
     };
-    
+
   }, [restauranteId]);
 
   useEffect(() => {
@@ -169,6 +172,67 @@ const PedidosEmAndamento = () => {
     enviarParaEntregador(pedidoId);
   };
 
+  const togglePedidoSelecionado = (pedidoId) => {
+    setSelectedPedidos((prev) =>
+      prev.includes(pedidoId)
+        ? prev.filter((id) => id !== pedidoId)
+        : [...prev, pedidoId]
+    );
+  };
+
+  const handleAbrirMenuMulti = (event) => {
+    if (selectedPedidos.length === 0) return;
+    setAnchorElMulti(event.currentTarget);
+  };
+
+  const handleFecharMenuMulti = () => {
+    setAnchorElMulti(null);
+  };
+
+  const handleEnviarMultiplos = (deliverer) => {
+    const pedidosAtivosDoEntregador = pedidos.filter(
+      (p) => p.entregador === deliverer._id && p.status !== "entregue"
+    ).length;
+
+    const disponivel = pedidosPorEntregador - pedidosAtivosDoEntregador;
+
+    const pedidosParaEnviar = selectedPedidos.slice(0, disponivel);
+
+    pedidosParaEnviar.forEach((pedidoId) => {
+      setSelectedDeliverer((prev) => ({ ...prev, [pedidoId]: deliverer }));
+      // Chama a função diretamente com o entregador, sem depender do selectedDeliverer
+      if (deliverer && socket.current) {
+        setIsSendingPedido((prev) => ({ ...prev, [pedidoId]: true }));
+
+        console.log(`📤 Enviando pedido ${pedidoId} para ${deliverer.nome} (envio múltiplo)`);
+
+        socket.current.emit("enviarPedido", {
+          pedidoId,
+          delivererId: deliverer._id,
+          restauranteId,
+        });
+
+        setTimeout(() => {
+          axios
+            .put(`https://gotrackapi.onrender.com/api/pedidos/${pedidoId}`, {
+              status: "pendente",
+            })
+            .then(() => {
+              console.log(`⏱️ Pedido ${pedidoId} retornado para 'pendente'`);
+              setIsSendingPedido((prev) => ({ ...prev, [pedidoId]: false }));
+              atualizarPedidos();
+            })
+            .catch((err) => console.error("❌ Erro ao atualizar pedido:", err));
+        }, 120000);
+      }
+    });
+
+
+    handleFecharMenuMulti();
+    setSelectedPedidos([]);
+  };
+
+
   return (
     <Box
       sx={{
@@ -189,74 +253,96 @@ const PedidosEmAndamento = () => {
       >
         Pedidos em Andamento
       </Typography>
+      {selectedPedidos.length > 0 && (
+    <Button
+      variant="contained"
+      color="secondary"
+      size="small"
+      onClick={handleAbrirMenuMulti}
+      disabled={deliverers.length === 0}
+    >
+      Escolher entregador ({selectedPedidos.length} pedidos)
+    </Button>
+  )}
       {pedidos.length > 0 ? (
-        <List>
-          {pedidos.map((pedido) => (
-            <Paper
-              key={pedido._id}
-              onClick={() => setSelectedPosition(pedido._id)}
-              elevation={4}
-              sx={{
-                backgroundColor: "#fff",
-                borderRadius: 3,
-                padding: 2,
-                mb: 2,
-                mx: 1,
-              }}
-            >
-              <Typography variant="subtitle1" fontWeight="bold" color="#ff7b00">
-                {pedido.nomeCliente}
-              </Typography>
-              <Box display="flex" alignItems="center" mt={1} mb={0.5}>
-                <FaMapMarkerAlt size={14} style={{ marginRight: 6 }} />
-                <Typography variant="body2">{pedido.enderecoCliente}</Typography>
-              </Box>
-              <Box display="flex" alignItems="center" mb={0.5}>
-                <FaPhone size={14} style={{ marginRight: 6 }} />
-                <Typography variant="body2">{pedido.telefoneCliente}</Typography>
-              </Box>
-              <Divider sx={{ my: 1 }} />
-              <Box mb={1}>
-                {pedido.itens.map((item, i) => (
-                  <Typography key={i} variant="body2">
-                    {item.quantidade}x {item.nome}
+        <>
+          <List>
+            {pedidos.map((pedido) => (
+              <Paper
+                key={pedido._id}
+                onClick={() => setSelectedPosition(pedido._id)}
+                elevation={4}
+                sx={{
+                  backgroundColor: "#fff",
+                  borderRadius: 3,
+                  padding: 2,
+                  mb: 2,
+                  mx: 1,
+                }}
+              >
+                <Box display="flex" justifyContent="space-between" alignItems="center">
+                  <Typography variant="subtitle1" fontWeight="bold" color="#ff7b00">
+                    {pedido.nomeCliente}
                   </Typography>
-                ))}
-              </Box>
-              <Box display="flex" justifyContent="space-between" alignItems="center">
-                <Typography variant="body2">
-                  Status:{" "}
-                  <strong style={{ color: "#ff7b00", textTransform: "capitalize" }}>
-                    {pedido.status}
-                  </strong>
-                </Typography>
-                <Box display="flex" alignItems="center">
-                  <FaMoneyBillWave size={14} style={{ marginRight: 6 }} />
+                  <input
+                    type="checkbox"
+                    checked={selectedPedidos.includes(pedido._id)}
+                    onChange={() => togglePedidoSelecionado(pedido._id)}
+                  />
+                </Box>
+                <Box display="flex" alignItems="center" mt={1} mb={0.5}>
+                  <FaMapMarkerAlt size={14} style={{ marginRight: 6 }} />
+                  <Typography variant="body2">{pedido.enderecoCliente}</Typography>
+                </Box>
+                <Box display="flex" alignItems="center" mb={0.5}>
+                  <FaPhone size={14} style={{ marginRight: 6 }} />
+                  <Typography variant="body2">{pedido.telefoneCliente}</Typography>
+                </Box>
+                <Divider sx={{ my: 1 }} />
+                <Box mb={1}>
+                  {pedido.itens.map((item, i) => (
+                    <Typography key={i} variant="body2">
+                      {item.quantidade}x {item.nome}
+                    </Typography>
+                  ))}
+                </Box>
+                <Box display="flex" justifyContent="space-between" alignItems="center">
                   <Typography variant="body2">
-                    <strong> {pedido.valorTotal}</strong>
+                    Status:{" "}
+                    <strong style={{ color: "#ff7b00", textTransform: "capitalize" }}>
+                      {pedido.status}
+                    </strong>
                   </Typography>
+                  <Box display="flex" alignItems="center">
+                    <FaMoneyBillWave size={14} style={{ marginRight: 6 }} />
+                    <Typography variant="body2">
+                      <strong> {pedido.valorTotal}</strong>
+                    </Typography>
+                  </Box>
                 </Box>
-              </Box>
-              {pedido.status?.toLowerCase() === "pendente" && (
-                <Box mt={2}>
-                  <Button
-                    variant="contained"
-                    color="primary"
-                    onClick={(e) => handleMenuClick(e, pedido._id)}
-                    disabled={!!isSendingPedido[pedido._id] || deliverers.length === 0}
-                  >
-                    {isSendingPedido[pedido._id]
-                      ? "Enviando..."
-                      : "Escolher Entregador"}
-                  </Button>
-                  <Typography variant="caption" color="gray">
-                    {deliverers.length === 0 && "Nenhum entregador disponível"}
-                  </Typography>
-                </Box>
-              )}
-            </Paper>
-          ))}
-        </List>
+                {pedido.status?.toLowerCase() === "pendente" && (
+                  <Box mt={2}>
+                    <Button
+                      variant="contained"
+                      color="primary"
+                      onClick={(e) => handleMenuClick(e, pedido._id)}
+                      disabled={!!isSendingPedido[pedido._id] || deliverers.length === 0}
+                    >
+                      {isSendingPedido[pedido._id]
+                        ? "Enviando..."
+                        : "Escolher Entregador"}
+                    </Button>
+                    <Typography variant="caption" color="gray">
+                      {deliverers.length === 0 && "Nenhum entregador disponível"}
+                    </Typography>
+                  </Box>
+                )}
+              </Paper>
+            ))}
+          </List>
+         
+        </>
+
       ) : (
         <Typography variant="body1" color="gray" sx={{ ml: 2 }}>
           Nenhum pedido em andamento.
@@ -266,25 +352,29 @@ const PedidosEmAndamento = () => {
       {/* Menu para seleção de entregador */}
       {pedidos.map((pedido) => (
         <Menu
-          key={pedido._id}
-          anchorEl={anchorEl[pedido._id]}
-          open={Boolean(anchorEl[pedido._id])}
-          onClose={() => handleMenuClose(pedido._id)}
+          anchorEl={anchorElMulti}
+          open={Boolean(anchorElMulti)}
+          onClose={handleFecharMenuMulti}
         >
-          {deliverers.map((deliverer) => (
-            <MenuItem
-              key={deliverer._id}
-              onClick={() => handleDelivererSelect(pedido._id, deliverer)}
-            >
-              <Typography variant="body2">{deliverer.nome}</Typography>
-              {deliverer.localizacao && (
-                <Typography variant="caption" color="gray">
-                  {`Localização: ${deliverer.localizacao.latitude}, ${deliverer.localizacao.longitude}`}
+          {deliverers.map((deliverer) => {
+            const pedidosAtivos = pedidos.filter(
+              (p) => p.entregador === deliverer._id && p.status !== "entregue"
+            ).length;
+
+            return (
+              <MenuItem
+                key={deliverer._id}
+                onClick={() => handleEnviarMultiplos(deliverer)}
+                disabled={pedidosAtivos >= pedidosPorEntregador}
+              >
+                <Typography variant="body2">
+                  {deliverer.nome} ({pedidosAtivos}/{pedidosPorEntregador})
                 </Typography>
-              )}
-            </MenuItem>
-          ))}
+              </MenuItem>
+            );
+          })}
         </Menu>
+
       ))}
     </Box>
   );

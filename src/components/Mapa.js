@@ -45,32 +45,47 @@ const Mapa = () => {
 
   useEffect(() => {
     if (!restauranteId) return;
-
+  
     const socket = io(apiUrl);
-
+  
     socket.on("connect", () => {
       console.log("✅ Socket conectado!", socket.id);
       socket.emit("joinRestaurante", { restauranteId });
     });
-
+  
+    socket.on("deliverersOnline", (data) => {
+      console.log("📍 [MAPA] deliverersOnline recebido:", data);
+      if (Array.isArray(data)) {
+        const comLocalizacao = data.filter((d) =>
+          d.localizacao && !isNaN(d.localizacao.latitude) && !isNaN(d.localizacao.longitude)
+        );
+  
+        const motoristasConvertidos = comLocalizacao.map((d) => ({
+          ...d,
+          latitude: d.localizacao.latitude,
+          longitude: d.localizacao.longitude,
+        }));
+  
+        setMotoristas(motoristasConvertidos);
+      }
+    });
+  
     socket.on("localizacaoAtualizada", (data) => {
       console.log("📍 Localização recebida:", data);
-
       const latitude = parseFloat(data.latitude);
       const longitude = parseFloat(data.longitude);
-
+  
       if (!isNaN(latitude) && !isNaN(longitude)) {
         setMotoristas((prev) => {
           const atualizados = prev.filter((m) => m._id !== data._id);
           return [...atualizados, { ...data, latitude, longitude }];
         });
-      } else {
-        console.warn("❌ Coordenadas inválidas recebidas:", data);
       }
     });
-
+  
     return () => socket.disconnect();
   }, [restauranteId]);
+  
 
   useEffect(() => {
     const geocodificarPedidos = async () => {
