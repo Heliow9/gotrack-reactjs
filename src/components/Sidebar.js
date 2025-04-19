@@ -105,6 +105,16 @@ const Sidebar = () => {
               primaryTypographyProps={{ style: { color: "#fff" } }}
             />
           </ListItem>
+          <ListItem button component={Link} to="/produtos">
+            <ListItemIcon>
+              <FaListUl style={{ color: "#fff" }} />
+            </ListItemIcon>
+            <ListItemText
+              primary="Produtos"
+              primaryTypographyProps={{ style: { color: "#fff" } }}
+            />
+          </ListItem>
+
         </List>
       </Collapse>
 

@@ -9,6 +9,7 @@ import { Button } from "@mui/material";
 import LogoutIcon from "@mui/icons-material/Logout";
 import "./App.css";
 import { useUI } from "../src/Context/UIContext";
+import Produtos from "./pages/Produtos"; // lá no topo
 
 function App() {
   const navigate = useNavigate();
@@ -43,6 +44,7 @@ function App() {
             <Route path="/" element={<Dashboard />} />
             <Route path="/pedidos" element={<Pedidos />} />
             <Route path="/motoristas" element={<Motoristas />} />
+            <Route path="/produtos" element={<Produtos />} />
             <Route path="/configuracoes" element={<Configuracoes />} />
             <Route path="*" element={<Navigate to="/" />} />
           </Routes>
