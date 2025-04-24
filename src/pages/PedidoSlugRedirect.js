@@ -2,6 +2,8 @@ import React, { useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import axios from "axios";
 
+const API_URL = process.env.REACT_APP_API_URL || "http://localhost:10000";
+
 const PedidoSlugRedirect = () => {
   const { slug } = useParams();
   const navigate = useNavigate();
@@ -9,10 +11,11 @@ const PedidoSlugRedirect = () => {
   useEffect(() => {
     const fetchRestaurante = async () => {
       try {
-        const res = await axios.get(`https://gotrackapi.onrender.com/publico/${slug}`);
-        if (res.data) {
-          localStorage.setItem("restauranteSelecionado", JSON.stringify(res.data));
+        const res = await axios.get(`${API_URL}/publico/${slug}`);
+        if (res.data?.restaurante) {
+          localStorage.setItem("restauranteSelecionado", JSON.stringify(res.data.restaurante));
           navigate("/pedido");
+    
         } else {
           navigate("/erro");
         }
@@ -21,6 +24,7 @@ const PedidoSlugRedirect = () => {
         navigate("/erro");
       }
     };
+
     fetchRestaurante();
   }, [slug, navigate]);
 
