@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   AppBar,
@@ -11,12 +11,12 @@ import {
   Paper,
   BottomNavigation,
   BottomNavigationAction,
+  Grid,
+  Fade
 } from "@mui/material";
 import HomeIcon from "@mui/icons-material/Home";
 import ShoppingCartIcon from "@mui/icons-material/ShoppingCart";
 import ListAltIcon from "@mui/icons-material/ListAlt";
-
-
 
 const produtosMock = [
   {
@@ -147,10 +147,10 @@ const produtosMock = [
   },
 ];
 
-
 const Publico = () => {
   const navigate = useNavigate();
   const [restaurante, setRestaurante] = useState(null);
+  const sectionRefs = useRef([]);
 
   useEffect(() => {
     const saved = localStorage.getItem("restauranteSelecionado");
@@ -171,123 +171,128 @@ const Publico = () => {
     return null;
   };
 
-// Só a parte da vitrine foi atualizada. Substitua seu return por isso:
+  const scrollToSection = (index) => {
+    const ref = sectionRefs.current[index];
+    if (ref) {
+      ref.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  };
 
+  return (
+    <Box sx={{ pb: 10, backgroundColor: "#fff" }}>
+      <AppBar position="sticky" color="success" sx={{ zIndex: 1201 }}>
+        <Toolbar sx={{ justifyContent: "space-between" }}>
+          <Box display="flex" alignItems="center" gap={2}>
+            {renderAvatar()}
+            <Typography variant="h6" fontWeight="bold">
+              {restaurante?.nome || "Carregando..."}
+            </Typography>
+          </Box>
+        </Toolbar>
+      </AppBar>
 
-console.log('entrou aqui')
-
-
-return (
-  <Box sx={{ pb: 10, backgroundColor: "#fff" }}>
-    {/* Top AppBar */}
-    <AppBar position="static" color="success" sx={{ borderRadius: 0 }}>
-      <Toolbar sx={{ justifyContent: "space-between" }}>
-        <Box display="flex" alignItems="center" gap={2}>
-          {renderAvatar()}
-          <Typography variant="h6" fontWeight="bold">
-            {restaurante?.nome || "Carregando..."}
-          </Typography>
-        </Box>
-      </Toolbar>
-    </AppBar>
-
-    {/* Scroll horizontal de categorias */}
-    <Box sx={{ overflowX: "auto", px: 2, py: 1, display: "flex", gap: 1, borderBottom: "1px solid #eee" }}>
-      {produtosMock.map((categoria, i) => (
-        <Button
-          key={i}
-          variant="outlined"
-          size="small"
-          sx={{
-            flexShrink: 0,
-            borderRadius: "20px",
-            textTransform: "none",
-            whiteSpace: "nowrap",
-            px: 2,
-            borderColor: "#ccc",
-            color: "#333",
-            fontWeight: "bold",
-            backgroundColor: "#f9f9f9",
-            ":hover": { backgroundColor: "#e0ffe0" },
-          }}
-        >
-          {categoria.categoria}
-        </Button>
-      ))}
-    </Box>
-
-    {/* Produtos por categoria */}
-    <Container sx={{ pt: 2 }}>
-      {produtosMock.map((categoria, i) => (
-        <Box key={i} sx={{ mb: 4 }}>
-          <Typography variant="h6" fontWeight="bold" sx={{ mb: 1 }}>
+      <Box sx={{ position: 'sticky', top: 64, zIndex: 1100, backgroundColor: '#fff', borderBottom: '1px solid #eee', px: 2, py: 0.5, overflowX: 'auto', display: 'flex', gap: 1, scrollbarWidth: 'none', '&::-webkit-scrollbar': { display: 'none' } }}>
+        {produtosMock.map((categoria, i) => (
+          <Button
+            key={i}
+            variant="outlined"
+            size="small"
+            onClick={() => scrollToSection(i)}
+            sx={{
+              flexShrink: 0,
+              borderRadius: "20px",
+              textTransform: "none",
+              whiteSpace: "nowrap",
+              px: 2,
+              borderColor: "#ccc",
+              color: "#333",
+              fontWeight: "bold",
+              backgroundColor: "#f9f9f9",
+              ":hover": { backgroundColor: "#e0ffe0" },
+            }}
+          >
             {categoria.categoria}
-          </Typography>
-          {categoria.itens.map((item, index) => (
-            <Paper
-              key={index}
-              elevation={1}
-              sx={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                p: 2,
-                mb: 2,
-                borderRadius: 2,
-              }}
-            >
-              <Box>
-                <Typography variant="subtitle1" fontWeight="bold">
-                  {item.nome}
-                </Typography>
-                <Typography variant="body2" color="text.secondary">
-                  {item.descricao}
-                </Typography>
-                <Typography variant="body2" color="primary" fontWeight="bold" sx={{ mt: 1 }}>
-                  R$ {item.preco.toFixed(2)}
-                </Typography>
-              </Box>
-              {item.imagem && (
-                <Box
-                  component="img"
-                  src={item.imagem}
-                  alt={item.nome}
-                  sx={{
-                    width: 80,
-                    height: 80,
-                    objectFit: "cover",
-                    borderRadius: 2,
-                    ml: 2,
-                  }}
-                />
-              )}
-            </Paper>
-          ))}
-        </Box>
-      ))}
-    </Container>
+          </Button>
+        ))}
+      </Box>
 
-    {/* Bottom Navigation */}
-    <Paper
-      elevation={10}
-      sx={{
-        position: "fixed",
-        bottom: 0,
-        left: 0,
-        right: 0,
-        zIndex: 1000,
-        borderTop: "1px solid #ccc",
-      }}
-    >
-      <BottomNavigation showLabels>
-        <BottomNavigationAction label="Início" icon={<HomeIcon />} />
-        <BottomNavigationAction label="Pedidos" icon={<ListAltIcon />} />
-        <BottomNavigationAction label="Carrinho" icon={<ShoppingCartIcon />} />
-      </BottomNavigation>
-    </Paper>
-  </Box>
-);
+      <Box sx={{ pt: 1, px: 2 }}>
+        {produtosMock.map((categoria, i) => (
+          <Box key={i} ref={el => sectionRefs.current[i] = el} sx={{ mb: 6, width: '100%' }}>
+            <Typography variant="h6" fontWeight="bold" sx={{ mb: 2 }}>
+              {categoria.categoria}
+            </Typography>
+            <Grid container spacing={2} sx={{ width: '100%', margin: 0 }}>
+              {categoria.itens.map((item, index) => (
+                <Grid item xs={12} key={index} sx={{ width: '100%' }}>
+                  <Fade in timeout={500}>
+                    <Paper
+                      elevation={1}
+                      sx={{
+                        display: "flex",
+                        flexDirection: "row",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        p: 2,
+                        borderRadius: 2,
+                        width: "100%",
+                        boxSizing: "border-box",
+                        flexWrap: "nowrap"
+                      }}
+                    >
+                      <Box sx={{ flex: 1, pr: 2 }}>
+                        <Typography variant="subtitle1" fontWeight="bold">
+                          {item.nome}
+                        </Typography>
+                        <Typography variant="body2" color="text.secondary">
+                          {item.descricao}
+                        </Typography>
+                        <Typography variant="body2" color="primary" fontWeight="bold" sx={{ mt: 1 }}>
+                          R$ {item.preco.toFixed(2)}
+                        </Typography>
+                      </Box>
+                      {item.imagem && (
+                        <Box
+                          component="img"
+                          src={item.imagem}
+                          alt={item.nome}
+                          sx={{
+                            width: 70,
+                            height: 70,
+                            objectFit: "cover",
+                            borderRadius: 2,
+                            flexShrink: 0,
+                          }}
+                        />
+                      )}
+                    </Paper>
+                  </Fade>
+                </Grid>
+              ))}
+            </Grid>
+          </Box>
+        ))}
+      </Box>
 
+      <Paper
+        elevation={10}
+        sx={{
+          position: "fixed",
+          bottom: 0,
+          left: 0,
+          right: 0,
+          zIndex: 1000,
+          borderTop: "1px solid #ccc",
+        }}
+      >
+        <BottomNavigation showLabels>
+          <BottomNavigationAction label="Início" icon={<HomeIcon />} />
+          <BottomNavigationAction label="Pedidos" icon={<ListAltIcon />} />
+          <BottomNavigationAction label="Carrinho" icon={<ShoppingCartIcon />} />
+        </BottomNavigation>
+      </Paper>
+    </Box>
+  );
 };
 
 export default Publico;
