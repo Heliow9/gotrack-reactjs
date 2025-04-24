@@ -12,7 +12,8 @@ import {
   BottomNavigation,
   BottomNavigationAction,
   Grid,
-  Fade
+  Fade,
+  useScrollTrigger
 } from "@mui/material";
 import HomeIcon from "@mui/icons-material/Home";
 import ShoppingCartIcon from "@mui/icons-material/ShoppingCart";
@@ -151,6 +152,7 @@ const Publico = () => {
   const navigate = useNavigate();
   const [restaurante, setRestaurante] = useState(null);
   const sectionRefs = useRef([]);
+  const trigger = useScrollTrigger({ threshold: 0 });
 
   useEffect(() => {
     const saved = localStorage.getItem("restauranteSelecionado");
@@ -174,14 +176,17 @@ const Publico = () => {
   const scrollToSection = (index) => {
     const ref = sectionRefs.current[index];
     if (ref) {
-      ref.scrollIntoView({ behavior: "smooth", block: "start" });
+      const offsetTop = ref.offsetTop;
+      const headerOffset = 135;
+      const scrollTo = offsetTop - headerOffset;
+      window.scrollTo({ top: scrollTo, behavior: "smooth" });
     }
   };
 
   return (
-    <Box sx={{ pb: 10, backgroundColor: "#fff" }}>
-      <AppBar position="sticky" color="success" sx={{ zIndex: 1201 }}>
-        <Toolbar sx={{ justifyContent: "space-between" }}>
+    <Box sx={{ pb: 10, backgroundColor: "#fff", m: 0, p: 0 }}>
+      <AppBar position="sticky" color="success" sx={{ zIndex: 1201, boxShadow: trigger ? 4 : 0, transition: 'box-shadow 0.3s ease-in-out' }}>
+        <Toolbar sx={{ justifyContent: "space-between", px: 2 }}>
           <Box display="flex" alignItems="center" gap={2}>
             {renderAvatar()}
             <Typography variant="h6" fontWeight="bold">
@@ -191,7 +196,7 @@ const Publico = () => {
         </Toolbar>
       </AppBar>
 
-      <Box sx={{ position: 'sticky', top: 64, zIndex: 1100, backgroundColor: '#fff', borderBottom: '1px solid #eee', px: 2, py: 0.5, overflowX: 'auto', display: 'flex', gap: 1, scrollbarWidth: 'none', '&::-webkit-scrollbar': { display: 'none' } }}>
+      <Box sx={{ position: 'sticky', top: 64, zIndex: 1100, backgroundColor: '#fff', borderBottom: '1px solid #eee', px: 2, py: 1, overflowX: 'auto', display: 'flex', gap: 1, scrollbarWidth: 'none', '&::-webkit-scrollbar': { display: 'none' }, boxShadow: trigger ? '0px 2px 6px rgba(0,0,0,0.05)' : 'none' }}>
         {produtosMock.map((categoria, i) => (
           <Button
             key={i}
@@ -216,9 +221,9 @@ const Publico = () => {
         ))}
       </Box>
 
-      <Box sx={{ pt: 1, px: 2 }}>
+      <Box sx={{ pt: 1, px: 2, m: 0 }}> {/* Conteúdo principal */}
         {produtosMock.map((categoria, i) => (
-          <Box key={i} ref={el => sectionRefs.current[i] = el} sx={{ mb: 6, width: '100%' }}>
+          <Box key={i} ref={el => sectionRefs.current[i] = el} sx={{ mb: 6, width: '100%', m: 0 }}>
             <Typography variant="h6" fontWeight="bold" sx={{ mb: 2 }}>
               {categoria.categoria}
             </Typography>
