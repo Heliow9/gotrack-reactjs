@@ -18,6 +18,7 @@ import {
 import HomeIcon from "@mui/icons-material/Home";
 import ShoppingCartIcon from "@mui/icons-material/ShoppingCart";
 import ListAltIcon from "@mui/icons-material/ListAlt";
+import ModalProduto from "../components/ModalProduto"; // ajuste o caminho conforme sua estrutura
 
 const produtosMock = [
   {
@@ -148,11 +149,15 @@ const produtosMock = [
   },
 ];
 
+
+
 const Publico = () => {
   const navigate = useNavigate();
   const [restaurante, setRestaurante] = useState(null);
   const sectionRefs = useRef([]);
   const trigger = useScrollTrigger({ threshold: 0 });
+  const [modalAberto, setModalAberto] = useState(false);
+  const [produtoSelecionado, setProdutoSelecionado] = useState(null);
 
   useEffect(() => {
     const saved = localStorage.getItem("restauranteSelecionado");
@@ -182,6 +187,38 @@ const Publico = () => {
       window.scrollTo({ top: scrollTo, behavior: "smooth" });
     }
   };
+
+  const abrirModalProduto = (item, categoriaType) => {
+    setProdutoSelecionado({
+      ...item,
+      precoBase: item.preco,
+      categoriaType,
+      ...(categoriaType === 'pizza' && {
+        saboresDisponiveis: [
+          { nome: "Calabresa", preco: 30 },
+          { nome: "Frango com Catupiry", preco: 55 },
+          { nome: "Portuguesa", preco: 52 },
+          { nome: "Marguerita", preco: 48 }
+        ],
+        bordasDisponiveis: [
+          { nome: "Sem borda", preco: 0 },
+          { nome: "Catupiry", preco: 5 },
+          { nome: "Cheddar", preco: 5 }
+        ],
+        complementos: [
+          { nome: "Molho extra", preco: 2 },
+          { nome: "Catupiry extra", preco: 3 }
+        ],
+        adicionais: [
+          { nome: "Bacon", preco: 4 },
+          { nome: "Ovo", preco: 2 },
+          { nome: "Azeitona", preco: 1.5 }
+        ]
+      })
+    });
+    setModalAberto(true);
+  };
+  
 
   return (
     <Box sx={{ pb: 10, backgroundColor: "#fff", m: 0, p: 0 }}>
@@ -223,16 +260,17 @@ const Publico = () => {
 
       <Box sx={{ pt: 1, px: 2, m: 0 }}> {/* Conteúdo principal */}
         {produtosMock.map((categoria, i) => (
-          <Box key={i} ref={el => sectionRefs.current[i] = el} sx={{ mb: 6, width: '100%', m: 0 }}>
+          <Box key={i} ref={el => sectionRefs.current[i] = el} sx={{ mb: 6, width: '100%', mt: i > 0 ? 4 : 0,  }}>
             <Typography variant="h6" fontWeight="bold" sx={{ mb: 2 }}>
               {categoria.categoria}
             </Typography>
-            <Grid container spacing={2} sx={{ width: '100%', margin: 0 }}>
+            <Grid container spacing={2} sx={{ width: '100%', margin: 0,   mb: i === produtosMock.length - 1 ? 4 : 9,}}>
               {categoria.itens.map((item, index) => (
                 <Grid item xs={12} key={index} sx={{ width: '100%' }}>
                   <Fade in timeout={500}>
                     <Paper
                       elevation={1}
+                      onClick={() => abrirModalProduto(item, categoria.categoria.toLowerCase().includes('pizza') ? 'pizza' : 'simple_item')}
                       sx={{
                         display: "flex",
                         flexDirection: "row",
@@ -242,7 +280,8 @@ const Publico = () => {
                         borderRadius: 2,
                         width: "100%",
                         boxSizing: "border-box",
-                        flexWrap: "nowrap"
+                        flexWrap: "nowrap",
+                        cursor: 'pointer'
                       }}
                     >
                       <Box sx={{ flex: 1, pr: 2 }}>
@@ -278,6 +317,10 @@ const Publico = () => {
           </Box>
         ))}
       </Box>
+
+      {produtoSelecionado && (
+        <ModalProduto open={modalAberto} onClose={() => setModalAberto(false)} produto={produtoSelecionado} />
+      )}
 
       <Paper
         elevation={10}
