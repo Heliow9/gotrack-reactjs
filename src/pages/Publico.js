@@ -173,6 +173,10 @@ const Publico = () => {
 
 // Só a parte da vitrine foi atualizada. Substitua seu return por isso:
 
+
+console.log('entrou aqui')
+
+
 return (
   <Box sx={{ pb: 10, backgroundColor: "#fff" }}>
     {/* Top AppBar */}

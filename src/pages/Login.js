@@ -18,7 +18,7 @@ function Login() {
   const [erro, setErro] = useState('');
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
-
+  console.log("🟢 App montado");
   const handleLogin = async () => {
     setErro('');
     if (!email || !senha) {
