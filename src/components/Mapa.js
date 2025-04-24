@@ -19,6 +19,7 @@ const Mapa = () => {
   const [pedidos, setPedidos] = useState([]);
   const mapRef = useRef();
   const { selectedPosition, pedidosMap } = useMapContext();
+  const [popupPedidoSelecionado, setPopupPedidoSelecionado] = useState(null);
 
   useEffect(() => {
     const fetchRestaurante = async () => {
@@ -35,6 +36,7 @@ const Mapa = () => {
         const data = await response.json();
         setRestauranteId(data._id);
         setRestauranteData(data);
+        console.log(restauranteData)
       } catch (error) {
         console.error("Erro ao obter restaurante:", error);
       }
@@ -199,22 +201,73 @@ const Mapa = () => {
             </Marker>
           ))}
 
-        {/* Pedidos */}
-        {pedidos.length > 0 &&
-          pedidos
-            .filter(p => !isNaN(p.latitude) && !isNaN(p.longitude))
-            .map((p) => (
-              <Marker key={p._id} longitude={p.longitude} latitude={p.latitude}>
-                <img
-                  src="https://cdn-icons-png.flaticon.com/512/3448/3448604.png"
-                  alt="Pedido"
-                  style={{ width: 28 }}
-                />
-                <Popup anchor="top" closeButton={false} longitude={p.longitude} latitude={p.latitude}>
-                  <strong>Pedido:</strong> {p.nomeCliente}
-                </Popup>
-              </Marker>
-            ))}
+{pedidos.length > 0 &&
+  pedidos
+    .filter(p => !isNaN(p.latitude) && !isNaN(p.longitude))
+    .map((p) => (
+      <React.Fragment key={p._id}>
+        <Marker
+          longitude={p.longitude}
+          latitude={p.latitude}
+          onClick={() => setPopupPedidoSelecionado(p)}
+        >
+          <img
+            src="https://cdn-icons-png.flaticon.com/512/3448/3448604.png"
+            alt="Pedido"
+            style={{ width: 28, cursor: 'pointer' }}
+          />
+        </Marker>
+
+        {popupPedidoSelecionado && popupPedidoSelecionado._id === p._id && (
+          <Popup
+            anchor="top"
+            longitude={p.longitude}
+            latitude={p.latitude}
+            onClose={() => setPopupPedidoSelecionado(null)}
+            closeOnClick={false}
+          >
+            <div style={{ minWidth: 220, fontFamily: 'Arial, sans-serif' }}>
+              <p style={{ margin: '4px 0' }}><strong>Cliente:</strong> {p.nomeCliente}</p>
+              <p style={{ margin: '4px 0' }}><strong>Endereço:</strong> {p.enderecoCliente}</p>
+              <p style={{ margin: '4px 0 12px' }}><strong>Valor:</strong> R$ {p.valorTotal}</p>
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+                <button
+                  onClick={() => console.log('🔄 Reencaminhar pedido', p._id)}
+                  style={{
+                    padding: '6px 12px',
+                    backgroundColor: '#f39c12',
+                    border: 'none',
+                    borderRadius: 4,
+                    color: 'white',
+                    cursor: 'pointer',
+                    fontWeight: 'bold',
+                  }}
+                >
+                  Atribuir Novamente
+                </button>
+
+                <button
+                  onClick={() => console.log('💬 Enviar mensagem para', p.nomeCliente)}
+                  style={{
+                    padding: '6px 12px',
+                    backgroundColor: '#3498db',
+                    border: 'none',
+                    borderRadius: 4,
+                    color: 'white',
+                    cursor: 'pointer',
+                    fontWeight: 'bold',
+                  }}
+                >
+                  Mensagem
+                </button>
+              </div>
+            </div>
+          </Popup>
+        )}
+      </React.Fragment>
+    ))}
+
       </Map>
     </div>
   );

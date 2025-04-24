@@ -22,13 +22,16 @@ import {
   DialogContent,
   DialogActions,
   Snackbar,
-  Alert
+  Alert,
+  Box,
+  Backdrop,
+  Stack
 } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
 import SearchIcon from "@mui/icons-material/Search";
-import axios from 'axios'; // Certifique-se de importar o axios no topo
-import DeleteIcon from '@mui/icons-material/Delete';
-import LockResetIcon from '@mui/icons-material/LockReset';
+import DeleteIcon from "@mui/icons-material/Delete";
+import LockResetIcon from "@mui/icons-material/LockReset";
+import axios from "axios";
 
 const Motoristas = () => {
   const [motoristas, setMotoristas] = useState([]);
@@ -39,7 +42,6 @@ const Motoristas = () => {
   const [motoristaSelecionado, setMotoristaSelecionado] = useState(null);
   const [novaSenha, setNovaSenha] = useState("");
 
-  // Modal
   const [open, setOpen] = useState(false);
   const [novoMotorista, setNovoMotorista] = useState({
     nome: "",
@@ -49,6 +51,7 @@ const Motoristas = () => {
   });
 
   const [snackbar, setSnackbar] = useState({ open: false, message: "", severity: "success" });
+
   const handleOpen = () => setOpen(true);
   const handleClose = () => setOpen(false);
 
@@ -80,33 +83,23 @@ const Motoristas = () => {
 
     const body = {
       ...novoMotorista,
-      restauranteId, // aqui deve ser "restaurante", como está no seu schema
+      restauranteId,
     };
 
     try {
-      const response = await axios.post("https://gotrackapi.onrender.com/register", body, {
+      await axios.post("https://gotrackapi.onrender.com/register", body, {
         headers: {
           "Content-Type": "application/json",
           Authorization: token,
         },
       });
 
-      setSnackbar({
-        open: true,
-        message: "Entregador cadastrado com sucesso!",
-        severity: "success",
-      });
-
+      setSnackbar({ open: true, message: "Entregador cadastrado com sucesso!", severity: "success" });
       handleClose();
       setNovoMotorista({ nome: "", email: "", senha: "", cpf: "" });
       fetchMotoristas();
     } catch (err) {
-      setSnackbar({
-        open: true,
-        message: "Erro ao cadastrar entregador. Verifique os dados.",
-        severity: "error",
-      });
-
+      setSnackbar({ open: true, message: "Erro ao cadastrar entregador. Verifique os dados.", severity: "error" });
       console.error("Erro ao cadastrar entregador:", err.response?.data || err.message);
     }
   };
@@ -119,21 +112,10 @@ const Motoristas = () => {
         headers: { Authorization: token },
       });
 
-      setSnackbar({
-        open: true,
-        message: "Entregador excluído com sucesso!",
-        severity: "success",
-      });
-
-      // Atualiza a lista
+      setSnackbar({ open: true, message: "Entregador excluído com sucesso!", severity: "success" });
       fetchMotoristas();
     } catch (err) {
-      setSnackbar({
-        open: true,
-        message: "Erro ao excluir entregador.",
-        severity: "error",
-      });
-
+      setSnackbar({ open: true, message: "Erro ao excluir entregador.", severity: "error" });
       console.error("Erro ao excluir entregador:", err.response?.data || err.message);
     }
   };
@@ -157,19 +139,12 @@ const Motoristas = () => {
     }
   };
 
-
-
-
-
   const filteredMotoristas = motoristas
-    .filter((moto) =>
-      moto.nome.toLowerCase().includes(search.toLowerCase()) ||
-      moto.email.toLowerCase().includes(search.toLowerCase())
+    .filter((m) =>
+      m.nome.toLowerCase().includes(search.toLowerCase()) ||
+      m.email.toLowerCase().includes(search.toLowerCase())
     )
-    .filter((moto) =>
-      statusFilter ? moto.statusConta === statusFilter : true
-    );
-
+    .filter((m) => (statusFilter ? m.statusConta === statusFilter : true));
 
   const abrirModalTrocarSenha = (motorista) => {
     setMotoristaSelecionado(motorista);
@@ -177,108 +152,93 @@ const Motoristas = () => {
   };
 
   return (
-    <Container>
-      <Typography variant="h4" gutterBottom>
-        Motoristas
-      </Typography>
-      <Typography variant="subtitle1" gutterBottom>
-        Cadastro, rastreamento e controle de entregadores aqui.
+    <Container maxWidth="lg" sx={{ py: 4 }}>
+      <Typography variant="h4" fontWeight="bold" gutterBottom>
+        Gerenciar Entregadores
       </Typography>
 
-      <Button
-        variant="contained"
-        color="primary"
-        startIcon={<AddIcon />}
-        sx={{ mb: 2 }}
-        onClick={handleOpen}
-      >
-        Novo Motorista
-      </Button>
+      <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} sx={{ mb: 3 }}>
+        <TextField
+          label="Buscar por nome ou email"
+          variant="outlined"
+          fullWidth
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          InputProps={{
+            startAdornment: (
+              <InputAdornment position="start">
+                <SearchIcon />
+              </InputAdornment>
+            ),
+          }}
+        />
 
-      {/* Filtros */}
-      <TextField
-        label="Buscar entregador"
-        variant="outlined"
-        size="small"
-        fullWidth
-        sx={{ mb: 2 }}
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-        InputProps={{
-          startAdornment: (
-            <InputAdornment position="start">
-              <SearchIcon />
-            </InputAdornment>
-          ),
-        }}
-      />
+        <FormControl fullWidth>
+          <InputLabel>Status</InputLabel>
+          <Select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            label="Status"
+          >
+            <MenuItem value="">Todos</MenuItem>
+            <MenuItem value="ativo">Ativo</MenuItem>
+            <MenuItem value="inativo">Inativo</MenuItem>
+          </Select>
+        </FormControl>
 
-      <FormControl fullWidth sx={{ mb: 2 }}>
-        <InputLabel>Status</InputLabel>
-        <Select
-          value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value)}
-          label="Status"
+        <Button
+          variant="contained"
+          startIcon={<AddIcon />}
+          onClick={handleOpen}
+          sx={{ minWidth: 180 }}
         >
-          <MenuItem value="">Todos</MenuItem>
-          <MenuItem value="ativo">Ativo</MenuItem>
-          <MenuItem value="inativo">Inativo</MenuItem>
-        </Select>
-      </FormControl>
+          Novo Entregador
+        </Button>
+      </Stack>
 
       {loading ? (
-        <CircularProgress />
+        <Backdrop open sx={{ color: "#fff", zIndex: 9999 }}>
+          <CircularProgress color="inherit" />
+        </Backdrop>
       ) : (
-        <Paper elevation={3}>
+        <Paper elevation={4}>
           <Table>
             <TableHead>
               <TableRow>
                 <TableCell>Nome</TableCell>
                 <TableCell>Email</TableCell>
                 <TableCell>Status</TableCell>
-                <TableCell>Ações</TableCell>
+                <TableCell align="center">Ações</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
               {filteredMotoristas.length > 0 ? (
-                filteredMotoristas.map((moto) => (
-                  <TableRow key={moto._id}>
-                    <TableCell>{moto.nome}</TableCell>
-                    <TableCell>{moto.email}</TableCell>
+                filteredMotoristas.map((m) => (
+                  <TableRow key={m._id}>
+                    <TableCell>{m.nome}</TableCell>
+                    <TableCell>{m.email}</TableCell>
                     <TableCell>
                       <Chip
-                        label={moto.statusConta === "ativo" ? "Ativo" : "Inativo"}
-                        color={moto.statusConta === "ativo" ? "success" : "default"}
+                        label={m.statusConta === "ativo" ? "Ativo" : "Inativo"}
+                        color={m.statusConta === "ativo" ? "success" : "default"}
+                        variant="outlined"
                       />
                     </TableCell>
-                    <TableCell align="center" sx={{ display: 'flex', justifyContent: 'center', flexDirection: 'column' }}>
-                      <Button
-                        variant="outlined"
-                        color="error"
-                        size="small"
-                        onClick={() => handleExcluir(moto._id)}
-                        startIcon={<DeleteIcon />}
-                      >
-                        Excluir
-                      </Button>
-                      <Button
-                        variant="outlined"
-                        color="primary"
-                        size="small"
-                        onClick={() => abrirModalTrocarSenha(moto)}
-                        startIcon={<LockResetIcon />}
-                      // sx={{ ml: 1 }}
-                      >
-                        Trocar Senha
-                      </Button>
-
-
+                    <TableCell align="center">
+                      <Stack direction="row" spacing={1} justifyContent="center">
+                        <Button size="small" color="error" variant="outlined" startIcon={<DeleteIcon />} onClick={() => handleExcluir(m._id)}>
+                          Excluir
+                        </Button>
+                        <Button size="small" color="primary" variant="outlined" startIcon={<LockResetIcon />} onClick={() => abrirModalTrocarSenha(m)}>
+                          Trocar Senha
+                        </Button>
+                      </Stack>
                     </TableCell>
                   </TableRow>
                 ))
               ) : (
                 <TableRow>
-                  <TableCell colSpan={3} align="center">
+                  <TableCell colSpan={4} align="center">
                     Nenhum entregador encontrado.
                   </TableCell>
                 </TableRow>
@@ -288,54 +248,30 @@ const Motoristas = () => {
         </Paper>
       )}
 
-      {/* Modal de cadastro */}
+      {/* Modal Cadastro */}
       <Dialog open={open} onClose={handleClose}>
-        <DialogTitle>Novo Entregador</DialogTitle>
+        <DialogTitle>Cadastrar Novo Entregador</DialogTitle>
         <DialogContent>
-          <TextField
-            margin="dense"
-            label="Nome"
-            fullWidth
-            value={novoMotorista.nome}
-            onChange={(e) => setNovoMotorista({ ...novoMotorista, nome: e.target.value })}
-          />
-          <TextField
-            margin="dense"
-            label="Email"
-            fullWidth
-            value={novoMotorista.email}
-            onChange={(e) => setNovoMotorista({ ...novoMotorista, email: e.target.value })}
-          />
-          <TextField
-            margin="dense"
-            label="Senha"
-            type="password"
-            fullWidth
-            value={novoMotorista.senha}
-            onChange={(e) => setNovoMotorista({ ...novoMotorista, senha: e.target.value })}
-          />
-          <TextField
-            margin="dense"
-            label="CPF"
-            fullWidth
-            value={novoMotorista.cpf}
-            onChange={(e) => setNovoMotorista({ ...novoMotorista, cpf: e.target.value })}
-          />
+          <TextField fullWidth margin="dense" label="Nome" value={novoMotorista.nome} onChange={(e) => setNovoMotorista({ ...novoMotorista, nome: e.target.value })} />
+          <TextField fullWidth margin="dense" label="Email" value={novoMotorista.email} onChange={(e) => setNovoMotorista({ ...novoMotorista, email: e.target.value })} />
+          <TextField fullWidth margin="dense" type="password" label="Senha" value={novoMotorista.senha} onChange={(e) => setNovoMotorista({ ...novoMotorista, senha: e.target.value })} />
+          <TextField fullWidth margin="dense" label="CPF" value={novoMotorista.cpf} onChange={(e) => setNovoMotorista({ ...novoMotorista, cpf: e.target.value })} />
         </DialogContent>
         <DialogActions>
           <Button onClick={handleClose}>Cancelar</Button>
-          <Button onClick={handleCadastrar} variant="contained" color="primary">Cadastrar</Button>
+          <Button variant="contained" onClick={handleCadastrar}>Cadastrar</Button>
         </DialogActions>
       </Dialog>
 
+      {/* Modal Trocar Senha */}
       <Dialog open={modalSenhaAberto} onClose={() => setModalSenhaAberto(false)}>
-        <DialogTitle>Trocar senha de {motoristaSelecionado?.nome}</DialogTitle>
+        <DialogTitle>Trocar Senha de {motoristaSelecionado?.nome}</DialogTitle>
         <DialogContent>
           <TextField
-            label="Nova Senha"
-            type="password"
             fullWidth
-            margin="normal"
+            margin="dense"
+            type="password"
+            label="Nova Senha"
             value={novaSenha}
             onChange={(e) => setNovaSenha(e.target.value)}
           />
@@ -346,14 +282,17 @@ const Motoristas = () => {
         </DialogActions>
       </Dialog>
 
-
       {/* Snackbar */}
       <Snackbar
         open={snackbar.open}
-        autoHideDuration={6000}
+        autoHideDuration={5000}
         onClose={() => setSnackbar({ ...snackbar, open: false })}
       >
-        <Alert onClose={() => setSnackbar({ ...snackbar, open: false })} severity={snackbar.severity} sx={{ width: "100%" }}>
+        <Alert
+          severity={snackbar.severity}
+          onClose={() => setSnackbar({ ...snackbar, open: false })}
+          sx={{ width: '100%' }}
+        >
           {snackbar.message}
         </Alert>
       </Snackbar>

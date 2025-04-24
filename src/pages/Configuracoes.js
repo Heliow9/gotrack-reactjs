@@ -100,7 +100,7 @@ const Configuracoes = () => {
     }
   };
 
-  const MAPBOX_API_KEY = "pk.eyJ1IjoiaGVsaW93OSIsImEiOiJjbTZrM2E4dWYwOGRlMmxvbHU3cWxpbWd1In0.K3uVvrfToT60yREcOfGdfw"; // substitua pela sua chave
+  const MAPBOX_API_KEY =  'pk.eyJ1IjoiaGVsaW93OSIsImEiOiJjbTljNDRnazgwZ3BmMmxwdW9nbWk1c3ZmIn0.NR96Um-T_CqTI3jDb7c2OQ';
 
   const buscarCoordenadasEndereco = async (formAtualizado) => {
     const {
@@ -110,9 +110,9 @@ const Configuracoes = () => {
       enderecoCidade,
       enderecoEstado,
     } = formAtualizado;
-  
+
     const enderecoCompleto = `${enderecoRua}, ${enderecoNumero}, ${enderecoBairro}, ${enderecoCidade} - ${enderecoEstado}`;
-  
+
     try {
       const res = await axios.get(
         `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(enderecoCompleto)}.json`,
@@ -124,7 +124,7 @@ const Configuracoes = () => {
           },
         }
       );
-  
+
       if (res.data && res.data.features.length > 0) {
         const [lon, lat] = res.data.features[0].center;
         return {
@@ -135,27 +135,42 @@ const Configuracoes = () => {
     } catch (error) {
       console.error("Erro ao buscar coordenadas no Mapbox:", error);
     }
-  
+
     return null;
   };
-  
+
 
   const handleSalvar = async () => {
     try {
       setLoading(true);
-      const coordenadas = await buscarCoordenadasEndereco(form);
+
+      const formComEnderecoAtualizado = {
+        ...form,
+        enderecoRua: form.enderecoRua || "",
+        enderecoNumero: form.enderecoNumero || "",
+        enderecoBairro: form.enderecoBairro || "",
+        enderecoCidade: form.enderecoCidade || "",
+        enderecoEstado: form.enderecoEstado || "",
+      };
+
+      const coordenadas = await buscarCoordenadasEndereco(formComEnderecoAtualizado);
       const token = localStorage.getItem("token");
 
       const payload = {
         ...form,
-        localizacao: coordenadas || form.localizacao,
+        localizacao: coordenadas ?? form.localizacao,
       };
 
-      await axios.put("https://gotrackapi.onrender.com/api/restaurantes/configuracoes", payload, {
-        headers: { Authorization: token },
-      });
+      await axios.put(
+        "https://gotrackapi.onrender.com/api/restaurantes/configuracoes",
+        payload,
+        { headers: { Authorization: token } }
+      );
 
       alert("Configurações salvas com sucesso!");
+      console.log("📍 Coordenadas encontradas:", coordenadas);
+      console.log("📦 Payload enviado:", payload);
+
     } catch (error) {
       console.error("Erro ao salvar configurações:", error);
       alert("Erro ao salvar configurações.");
@@ -163,6 +178,7 @@ const Configuracoes = () => {
       setLoading(false);
     }
   };
+
 
   return (
     <Paper elevation={3} sx={{ padding: 4 }}>

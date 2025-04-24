@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useUI } from "../../src/Context/UIContext";
 import Mapa from "../components/Mapa";
 import ModalPedido from "../components/ModalPedido";
@@ -27,6 +27,19 @@ const Dashboard = () => {
   const [showToast, setShowToast] = useState(false);
   const [animarSaida, setAnimarSaida] = useState(false);
 
+  // 🧠 Atalhos de teclado
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.ctrlKey && e.key.toLowerCase() === "p") {
+        e.preventDefault(); // evita abrir impressão
+        setModalAberto(true);
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
+
   const ativarFullscreen = () => {
     setFullscreen(true);
     setShowToast(true);
@@ -37,7 +50,7 @@ const Dashboard = () => {
     setTimeout(() => {
       setFullscreen(false);
       setAnimarSaida(false);
-    }, 300); // tempo da animação de saída
+    }, 300);
   };
 
   return fullscreen ? (
@@ -53,7 +66,6 @@ const Dashboard = () => {
         backgroundColor: "#fff",
       }}
     >
-      {/* Botão sair do fullscreen */}
       <Box position="absolute" top={16} right={16} zIndex={10}>
         <IconButton
           onClick={desativarFullscreen}
@@ -70,7 +82,6 @@ const Dashboard = () => {
         </IconButton>
       </Box>
 
-      {/* Mapa em tela cheia */}
       <Box
         sx={{
           position: "absolute",
@@ -85,7 +96,6 @@ const Dashboard = () => {
         <Mapa />
       </Box>
 
-      {/* Painel flutuante com fade + slide */}
       <Fade in={!animarSaida} timeout={300}>
         <Slide direction="right" in={!animarSaida} timeout={300}>
           <Box
@@ -172,8 +182,6 @@ const Dashboard = () => {
       >
         <Mapa />
       </Box>
-
-      <PedidosEmAndamento />
 
       <ModalPedido isOpen={modalAberto} onClose={() => setModalAberto(false)} />
     </Container>

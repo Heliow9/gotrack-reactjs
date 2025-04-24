@@ -1,17 +1,25 @@
 import React from "react";
-import { Routes, Route, useNavigate, Navigate } from "react-router-dom";
+import { Routes, Route, Navigate, Outlet, useNavigate } from "react-router-dom";
 import Sidebar from "./components/Sidebar";
 import Dashboard from "./pages/Dashboard";
 import Pedidos from "./pages/Pedidos";
 import Motoristas from "./pages/Motoristas";
 import Configuracoes from "./pages/Configuracoes";
+import Produtos from "./pages/Produtos";
+import Publico from "./pages/Publico";
+import PedidoSlugRedirect from "./pages/PedidoSlugRedirect";
+import ErroRestaurante from "./pages/ErroRestaurante";
 import { Button } from "@mui/material";
 import LogoutIcon from "@mui/icons-material/Logout";
 import "./App.css";
 import { useUI } from "../src/Context/UIContext";
-import Produtos from "./pages/Produtos"; // lá no topo
 
-function App() {
+const ProtectedRoute = ({ children }) => {
+  const token = localStorage.getItem("token");
+  return token ? children : <Navigate to="/login" />;
+};
+
+const AppLayout = () => {
   const navigate = useNavigate();
   const { fullscreen } = useUI();
 
@@ -23,7 +31,6 @@ function App() {
   return (
     <div className="app-container">
       {!fullscreen && <Sidebar />}
-
       <div className="main-content">
         {!fullscreen && (
           <header className="header" style={headerStyle}>
@@ -38,21 +45,45 @@ function App() {
             </Button>
           </header>
         )}
-
         <div className="dashboard-container">
-          <Routes>
-            <Route path="/" element={<Dashboard />} />
-            <Route path="/pedidos" element={<Pedidos />} />
-            <Route path="/motoristas" element={<Motoristas />} />
-            <Route path="/produtos" element={<Produtos />} />
-            <Route path="/configuracoes" element={<Configuracoes />} />
-            <Route path="*" element={<Navigate to="/" />} />
-          </Routes>
+          <Outlet />
         </div>
       </div>
     </div>
   );
-}
+};
+
+const App = () => {
+  return (
+    <Routes>
+      {/* Rota especial que seta o restaurante no localStorage */}
+      <Route path="/pedido/:slug" element={<PedidoSlugRedirect />} />
+
+      {/* Rota que carrega o painel público do restaurante com dados locais */}
+      <Route path="/pedido" element={<Publico />} />
+
+      {/* Página de erro se restaurante não estiver disponível */}
+      <Route path="/erro" element={<ErroRestaurante />} />
+
+      {/* Rotas privadas (dashboard) */}
+      <Route
+        path="/"
+        element={
+          <ProtectedRoute>
+            <AppLayout />
+          </ProtectedRoute>
+        }
+      >
+        <Route index element={<Dashboard />} />
+        <Route path="pedidos" element={<Pedidos />} />
+        <Route path="motoristas" element={<Motoristas />} />
+        <Route path="produtos" element={<Produtos />} />
+        <Route path="configuracoes" element={<Configuracoes />} />
+        <Route path="*" element={<Navigate to="/" />} />
+      </Route>
+    </Routes>
+  );
+};
 
 const headerStyle = {
   display: "flex",

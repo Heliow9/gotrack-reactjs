@@ -1,31 +1,20 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter } from "react-router-dom";
 import App from "./App";
-import Login from "./pages/Login";
-import ProtectedRoute from "../src/components/ProtectedRoute";
-import { MapProvider } from './Context/MapContext'
+import { MapProvider } from "./Context/MapContext";
 import { PedidosProvider } from "./Context/PedidosContext";
-import { UIProvider } from "./Context/UIContext"; // <- IMPORTANTE
+import { UIProvider } from "./Context/UIContext";
+
 const root = ReactDOM.createRoot(document.getElementById("root"));
 root.render(
   <BrowserRouter>
-    <Routes>
-      <Route path="/login" element={<Login />} />
-      <Route
-        path="/*"
-        element={
-          <ProtectedRoute>
-            <MapProvider>
-              <PedidosProvider>
-              <UIProvider>
-                <App />
-              </UIProvider>
-              </PedidosProvider>
-            </MapProvider>
-          </ProtectedRoute>
-        } F
-      />
-    </Routes>
+    <MapProvider>
+      <PedidosProvider>
+        <UIProvider>
+          <App />
+        </UIProvider>
+      </PedidosProvider>
+    </MapProvider>
   </BrowserRouter>
 );
