@@ -9,6 +9,7 @@ import Produtos from "./pages/Produtos";
 import Publico from "./pages/Publico";
 import PedidoSlugRedirect from "./pages/PedidoSlugRedirect";
 import ErroRestaurante from "./pages/ErroRestaurante";
+import Login from "./pages/Login"; // 🔥 Aqui você importa a sua tela de login existente
 import { Button } from "@mui/material";
 import LogoutIcon from "@mui/icons-material/Logout";
 import "./App.css";
@@ -56,6 +57,9 @@ const AppLayout = () => {
 const App = () => {
   return (
     <Routes>
+      {/* Rota de login existente (necessária para o Navigate funcionar) */}
+      <Route path="/login" element={<Login />} />
+
       {/* Rota especial que seta o restaurante no localStorage */}
       <Route path="/pedido/:slug" element={<PedidoSlugRedirect />} />
 
