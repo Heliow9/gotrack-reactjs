@@ -17,6 +17,7 @@ import {
   Divider
 } from "@mui/material";
 import HomeIcon from "@mui/icons-material/Home";
+import Badge from "@mui/material/Badge";
 import ShoppingCartIcon from "@mui/icons-material/ShoppingCart";
 import ListAltIcon from "@mui/icons-material/ListAlt";
 import ModalProduto from "../components/ModalProduto";
@@ -34,15 +35,27 @@ const Publico = () => {
   const trigger = useScrollTrigger({ threshold: 0 });
   const [modalAberto, setModalAberto] = useState(false);
   const [produtoSelecionado, setProdutoSelecionado] = useState(null);
+  const [quantidadeCarrinho, setQuantidadeCarrinho] = useState(0);
 
+  useEffect(() => {
+    const atualizarQuantidade = () => {
+      const carrinho = JSON.parse(localStorage.getItem("carrinho")) || [];
+      const total = carrinho.reduce((acc, item) => acc + item.quantidade, 0);
+      setQuantidadeCarrinho(total);
+    };
 
+    atualizarQuantidade();
+    const intervalo = setInterval(atualizarQuantidade, 1000); // atualiza a cada segundo
+
+    return () => clearInterval(intervalo);
+  }, []);
 
   useEffect(() => {
     const restauranteData = localStorage.getItem("restauranteSelecionado");
     if (!restauranteData) return navigate("/erro");
     const restaurante = JSON.parse(restauranteData);
     setRestaurante(restaurante);
-  
+
     const fetchProdutos = async () => {
       try {
         const res = await axios.get(`${API_URL}/publico/${restaurante.slugIdentificador}`);
@@ -52,10 +65,10 @@ const Publico = () => {
         navigate("/erro");
       }
     };
-  
+
     fetchProdutos();
   }, []);
-  
+
 
 
 
@@ -127,7 +140,7 @@ const Publico = () => {
             <Divider sx={{ mb: 2 }} />
             <Grid container spacing={2} alignItems="stretch">
               {categoria.itens.map((item, index) => (
-                <Grid item xs={12} key={index}>
+                <Grid item xs={12} key={index} style={{ width: '100%' }}>
                   <Fade in timeout={500}>
                     <Paper elevation={2}
                       onClick={() => abrirModalProduto(item, categoria.tipo || 'simple_item')}
@@ -176,7 +189,15 @@ const Publico = () => {
         <BottomNavigation showLabels>
           <BottomNavigationAction label="Início" icon={<HomeIcon />} />
           <BottomNavigationAction label="Pedidos" icon={<ListAltIcon />} />
-          <BottomNavigationAction label="Carrinho" icon={<ShoppingCartIcon />} />
+          <BottomNavigationAction
+            label="Carrinho"
+            icon={
+              <Badge badgeContent={quantidadeCarrinho} color="error">
+                <ShoppingCartIcon />
+              </Badge>
+            }
+            onClick={() => navigate("/carrinho")}
+          />
         </BottomNavigation>
       </Paper>
     </Box>
