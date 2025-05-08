@@ -18,8 +18,11 @@ import DeleteIcon from "@mui/icons-material/Delete";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import { useNavigate } from "react-router-dom";
 
+<<<<<<< HEAD
 
 
+=======
+>>>>>>> de8e3df14a776dd3d6c33e953ad61766931ae91c
 const Carrinho = () => {
   const [itensCarrinho, setItensCarrinho] = useState([]);
   const [restaurante, setRestaurante] = useState(null);
