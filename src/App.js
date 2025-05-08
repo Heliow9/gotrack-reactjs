@@ -15,6 +15,7 @@ import LogoutIcon from "@mui/icons-material/Logout";
 import "./App.css";
 import { useUI } from "../src/Context/UIContext";
 import Carrinho from "./pages/Carrinho";
+import Checkout from "./pages/Checkout";
 
 const ProtectedRoute = ({ children }) => {
   const token = localStorage.getItem("token");
@@ -69,6 +70,11 @@ const App = () => {
 
       {/* Rota que carrega o painel público do restaurante com dados locais */}
       <Route path="/carrinho" element={<Carrinho />} />
+
+      {/* Rota que carrega o painel checkout do restaurante com dados locais */}
+      <Route path="/checkout" element={<Checkout />} />
+
+      
 
       {/* Página de erro se restaurante não estiver disponível */}
       <Route path="/erro" element={<ErroRestaurante />} />

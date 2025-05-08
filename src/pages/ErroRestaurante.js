@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 
 const ErroRestaurante = () => {
   const navigate = useNavigate();
+  const result = localStorage.getItem('restauranteSelecionado');
 
   return (
     <Container sx={{ mt: 10, textAlign: "center" }}>
@@ -11,7 +12,7 @@ const ErroRestaurante = () => {
         Restaurante não encontrado
       </Typography>
       <Typography variant="body1" gutterBottom>
-        O link pode estar incorreto ou o restaurante não está mais disponível.
+        O link pode estar incorreto ou o restaurante não está mais disponível .{result}
       </Typography>
       <Button variant="contained" color="primary" onClick={() => navigate("/")}>
         Voltar para Início
