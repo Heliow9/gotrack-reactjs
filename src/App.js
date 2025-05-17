@@ -16,6 +16,7 @@ import "./App.css";
 import { useUI } from "../src/Context/UIContext";
 import Carrinho from "./pages/Carrinho";
 import Checkout from "./pages/Checkout";
+import PedidosCliente from "./pages/PedidosCliente";
 
 const ProtectedRoute = ({ children }) => {
   const token = localStorage.getItem("token");
@@ -73,6 +74,9 @@ const App = () => {
 
       {/* Rota que carrega o painel checkout do restaurante com dados locais */}
       <Route path="/checkout" element={<Checkout />} />
+
+      {/* Rota que carrega o painel pedidosVitrine do restaurante com dados locais */}
+      <Route path="/meus-pedidos/:telefone" element={<PedidosCliente/>} />
 
       
 

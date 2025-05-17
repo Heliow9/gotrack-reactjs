@@ -188,7 +188,8 @@ const Publico = () => {
       <Paper elevation={10} sx={{ position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 1000 }}>
         <BottomNavigation showLabels>
           <BottomNavigationAction label="Início" icon={<HomeIcon />} />
-          <BottomNavigationAction label="Pedidos" icon={<ListAltIcon />} />
+          <BottomNavigationAction label="Pedidos" icon={<ListAltIcon />}
+            onClick={() => navigate("/meus-pedidos")} />
           <BottomNavigationAction
             label="Carrinho"
             icon={

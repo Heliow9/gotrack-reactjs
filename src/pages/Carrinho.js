@@ -60,55 +60,45 @@ const Carrinho = () => {
     return itensCarrinho.reduce((total, item) => total + item.precoTotal, 0);
   };
 
-  const renderExtras = (item) => {
-    const chips = [];
+const renderExtras = (item) => {
+  const chips = [];
 
-    if (item.saboresSelecionados?.length > 0 && item.saboresDisponiveis) {
-      const saboresComPreco = item.saboresSelecionados.map((s) => {
-        const sObj = item.saboresDisponiveis.find((sb) => sb.nome === s);
-        return sObj ? { nome: s, preco: parseFloat(sObj.preco || 0) } : { nome: s, preco: 0 };
-      });
+  // Sabores (continua como array de string)
+  if (item.saboresSelecionados?.length > 0) {
+    chips.push(`Sabores: ${item.saboresSelecionados.join(" / ")}`);
+  }
 
-      const textoSabores = saboresComPreco.map((s) => s.nome).join(" + ");
-      const precoSabores = saboresComPreco.length === 1
-        ? saboresComPreco[0].preco
-        : Math.max(...saboresComPreco.map((s) => s.preco));
+  // Borda (agora é objeto)
+  if (item.bordaSelecionada) {
+    chips.push(`Borda: ${item.bordaSelecionada.nome} (+R$ ${item.bordaSelecionada.preco.toFixed(2)})`);
+  }
 
-      chips.push(`Sabores: ${textoSabores} (+R$ ${precoSabores.toFixed(2)})`);
-    }
+  // Adicional (agora é objeto)
+  if (item.adicionalSelecionado) {
+    chips.push(`Adicional: ${item.adicionalSelecionado.nome} (+R$ ${item.adicionalSelecionado.preco.toFixed(2)})`);
+  }
 
-    if (item.bordaSelecionada && item.bordaSelecionada !== "nenhum") {
-      const borda = item.bordasDisponiveis?.find((b) => b.nome === item.bordaSelecionada);
-      const preco = borda ? parseFloat(borda.preco || 0) : 0;
-      chips.push(`Borda: ${item.bordaSelecionada} (+R$ ${preco.toFixed(2)})`);
-    }
+  // Complementos (agora é array de objetos)
+  if (item.complementosSelecionados?.length > 0) {
+    item.complementosSelecionados.forEach((comp) => {
+      chips.push(`Comp: ${comp.nome} (+R$ ${comp.preco.toFixed(2)})`);
+    });
+  }
 
-    if (item.adicionalSelecionado && item.adicionalSelecionado !== "nenhum") {
-      const adicional = item.adicionais?.find((a) => a.nome === item.adicionalSelecionado);
-      const preco = adicional ? parseFloat(adicional.preco || 0) : 0;
-      chips.push(`Adicional: ${item.adicionalSelecionado} (+R$ ${preco.toFixed(2)})`);
-    }
+  // Observação
+  if (item.observacao) {
+    chips.push(`Obs: ${item.observacao}`);
+  }
 
-    if (item.complementosSelecionados?.length > 0) {
-      item.complementosSelecionados.forEach((c) => {
-        const comp = item.complementos?.find((co) => co.nome === c);
-        const preco = comp ? parseFloat(comp.preco || 0) : 0;
-        chips.push(`Comp: ${c} (+R$ ${preco.toFixed(2)})`);
-      });
-    }
+  return (
+    <Box display="flex" flexWrap="wrap" gap={1} mt={1}>
+      {chips.map((text, i) => (
+        <Chip key={i} label={text} size="small" color="default" />
+      ))}
+    </Box>
+  );
+};
 
-    if (item.observacao) {
-      chips.push(`Obs: ${item.observacao}`);
-    }
-
-    return (
-      <Box display="flex" flexWrap="wrap" gap={1} mt={1}>
-        {chips.map((text, i) => (
-          <Chip key={i} label={text} size="small" color="default" />
-        ))}
-      </Box>
-    );
-  };
 
   return (
     <Box display="flex" flexDirection="column" height="100vh">

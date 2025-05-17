@@ -22,7 +22,7 @@ import {
 
 const ModalProduto = ({ open, onClose, produto }) => {
   const [saboresSelecionados, setSaboresSelecionados] = useState([]);
-  const [bordaSelecionada, setBordaSelecionada] = useState(null);
+  const [bordaSelecionada, setBordaSelecionada] = useState('nenhum');
   const [complementosSelecionados, setComplementosSelecionados] = useState([]);
   const [observacao, setObservacao] = useState("");
   const [quantidade, setQuantidade] = useState(1);
@@ -86,34 +86,53 @@ const ModalProduto = ({ open, onClose, produto }) => {
   };
 
 
-  const handleAddToCart = () => {
-    if (!isValid()) {
-      setShowAlert(true);
-      return;
-    }
+const handleAddToCart = () => {
+  if (!isValid()) {
+    setShowAlert(true);
+    return;
+  }
 
-    const pedido = {
-      produtoId: produto.id,
-      nome: produto.nome,
-      imagem: produto.imagem || null,
-      categoriaType: produto.categoriaType,
-      saboresSelecionados,
-      bordaSelecionada,
-      complementosSelecionados,
-      adicionalSelecionado,
-      observacao,
-      quantidade,
-      precoTotal,
-    };
+  // pega objetos completos das escolhas
+  const bordaObj = produto.bordasDisponiveis?.find(b => b.nome === bordaSelecionada);
+  const adicionalObj = produto.adicionais?.find(a => a.nome === adicionalSelecionado);
+  const complementosObj = complementoSelecionados => 
+    produto.complementos?.filter(c => complementoSelecionados.includes(c.nome)) || [];
 
-    // Salvar no localStorage
-    const carrinhoAtual = JSON.parse(localStorage.getItem("carrinho")) || [];
-    carrinhoAtual.push(pedido);
-    localStorage.setItem("carrinho", JSON.stringify(carrinhoAtual));
-
-    setShowSnackbar(true);
-    onClose();
+  const pedido = {
+    produtoId: produto.id,
+    nome: produto.nome,
+    imagem: produto.imagem || null,
+    categoriaType: produto.categoriaType,
+    saboresSelecionados, // array simples já tá ok
+    bordaSelecionada: bordaSelecionada === "nenhum" ? null : {
+      nome: bordaObj?.nome,
+      preco: parseFloat(bordaObj?.preco || 0)
+    },
+    adicionalSelecionado: adicionalSelecionado === "nenhum" ? null : {
+      nome: adicionalObj?.nome,
+      preco: parseFloat(adicionalObj?.preco || 0)
+    },
+    complementosSelecionados: complementosSelecionados.length > 0
+      ? complementosObj(complementosSelecionados).map(c => ({
+          nome: c.nome,
+          preco: parseFloat(c.preco || 0)
+        }))
+      : [],
+    observacao,
+    quantidade,
+    precoUnitario: +(precoTotal / quantidade).toFixed(2),
+    precoTotal,
   };
+
+  // salvar no carrinho
+  const carrinhoAtual = JSON.parse(localStorage.getItem("carrinho")) || [];
+  carrinhoAtual.push(pedido);
+  localStorage.setItem("carrinho", JSON.stringify(carrinhoAtual));
+
+  setShowSnackbar(true);
+  onClose();
+};
+
 
 
   return (

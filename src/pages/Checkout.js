@@ -23,6 +23,7 @@ const Checkout = () => {
   const [qrCodeUrl, setQrCodeUrl] = useState("");
   const [qrCodeTexto, setQrCodeTexto] = useState("");
   const [copiado, setCopiado] = useState(false);
+  const [resumoPedido, setResumoPedido] = useState({ itens: [], total: 0 });
 
   const restaurante = JSON.parse(localStorage.getItem("restauranteSelecionado"));
 
@@ -54,47 +55,49 @@ const Checkout = () => {
   const finalizarPedido = async () => {
     const carrinho = JSON.parse(localStorage.getItem("carrinho")) || [];
     if (!telefone || !nome || !endereco.rua || carrinho.length === 0) {
-        alert("Preencha todos os dados obrigatórios.");
-        return;
+      alert("Preencha todos os dados obrigatórios.");
+      return;
     }
 
     setCarregando(true);
     try {
-        // ✅ 1. Criar ou atualizar cliente
-        await axios.post(`${API_URL}/publico/cliente`, {
-            nome,
-            telefone,
-            enderecos: [endereco]
-        });
+      await axios.post(`${API_URL}/publico/cliente`, {
+        nome,
+        telefone,
+        enderecos: [endereco]
+      });
 
-        // ✅ 2. Criar pedido
-        const response = await axios.post(`${API_URL}/publico/pedido`, {
-            itens: carrinho,
-            telefoneCliente: telefone,
-            nomeCliente: nome,
-            enderecoCliente: `${endereco.rua}, ${endereco.numero} - ${endereco.bairro}`,
-            residenciaNumero: endereco.numero,
-            residenciaComplemento: endereco.complemento || '',
-            residenciaReferencia: '',
-            residenciaBairro: endereco.bairro,
-            residenciaCep: endereco.cep,
-            valorTotal: carrinho.reduce((acc, item) => acc + item.precoTotal, 0),
-            restaurante: restaurante._id,
-            formadePagamento: "Pix",
-            origem: "vitrine"
-        });
+      const valorTotal = carrinho.reduce((acc, item) => acc + item.precoTotal, 0);
 
-        setQrCodeTexto(response.data.pix_qr_code);
-        setQrCodeUrl(response.data.pix_qr_code_url);
-        localStorage.removeItem("carrinho");
+      const response = await axios.post(`${API_URL}/publico/pedido`, {
+        itens: carrinho,
+        telefoneCliente: telefone,
+        nomeCliente: nome,
+        enderecoCliente: `${endereco.rua}, ${endereco.numero} - ${endereco.bairro}`,
+        residenciaNumero: endereco.numero,
+        residenciaComplemento: endereco.complemento || '',
+        residenciaReferencia: '',
+        residenciaBairro: endereco.bairro,
+        residenciaCep: endereco.cep,
+        valorTotal,
+        restaurante: restaurante._id,
+        formadePagamento: "Pix",
+        origem: "vitrine"
+      });
+
+      // ✅ Salvar resumo do pedido antes de limpar o carrinho
+      setResumoPedido({ itens: carrinho, total: valorTotal });
+      setQrCodeTexto(response.data.pix_qr_code);
+      setQrCodeUrl(response.data.pix_qr_code_url);
+
+      localStorage.removeItem("carrinho");
     } catch (err) {
-        alert("Erro ao finalizar pedido.");
-        console.error(err);
+      alert("Erro ao finalizar pedido.");
+      console.error(err);
     } finally {
-        setCarregando(false);
+      setCarregando(false);
     }
-};
-
+  };
 
   const copiarPix = async () => {
     try {
@@ -154,14 +157,14 @@ const Checkout = () => {
 
           <Typography variant="subtitle1" fontWeight="bold" gutterBottom>Endereço de Entrega</Typography>
 
-          <TextField label="Apelido" fullWidth margin="dense" value={endereco.apelido} onChange={(e) => setEndereco({ ...endereco, apelido: e.target.value })} />
-          <TextField label="Rua" fullWidth margin="dense" value={endereco.rua} onChange={(e) => setEndereco({ ...endereco, rua: e.target.value })} />
-          <TextField label="Número" fullWidth margin="dense" value={endereco.numero} onChange={(e) => setEndereco({ ...endereco, numero: e.target.value })} />
-          <TextField label="Complemento" fullWidth margin="dense" value={endereco.complemento} onChange={(e) => setEndereco({ ...endereco, complemento: e.target.value })} />
-          <TextField label="Bairro" fullWidth margin="dense" value={endereco.bairro} onChange={(e) => setEndereco({ ...endereco, bairro: e.target.value })} />
-          <TextField label="Cidade" fullWidth margin="dense" value={endereco.cidade} onChange={(e) => setEndereco({ ...endereco, cidade: e.target.value })} />
-          <TextField label="Estado" fullWidth margin="dense" value={endereco.estado} onChange={(e) => setEndereco({ ...endereco, estado: e.target.value })} />
-          <TextField label="CEP" fullWidth margin="dense" value={endereco.cep} onChange={(e) => setEndereco({ ...endereco, cep: e.target.value })} />
+          <TextField label="Apelido" fullWidth margin="dense" value={endereco.apelido || ""} onChange={(e) => setEndereco({ ...endereco, apelido: e.target.value })} />
+          <TextField label="Rua" fullWidth margin="dense" value={endereco.rua || ""} onChange={(e) => setEndereco({ ...endereco, rua: e.target.value })} />
+          <TextField label="Número" fullWidth margin="dense" value={endereco.numero || ""} onChange={(e) => setEndereco({ ...endereco, numero: e.target.value })} />
+          <TextField label="Complemento" fullWidth margin="dense" value={endereco.complemento || ""} onChange={(e) => setEndereco({ ...endereco, complemento: e.target.value })} />
+          <TextField label="Bairro" fullWidth margin="dense" value={endereco.bairro || ""} onChange={(e) => setEndereco({ ...endereco, bairro: e.target.value })} />
+          <TextField label="Cidade" fullWidth margin="dense" value={endereco.cidade || ""} onChange={(e) => setEndereco({ ...endereco, cidade: e.target.value })} />
+          <TextField label="Estado" fullWidth margin="dense" value={endereco.estado || ""} onChange={(e) => setEndereco({ ...endereco, estado: e.target.value })} />
+          <TextField label="CEP" fullWidth margin="dense" value={endereco.cep || ""} onChange={(e) => setEndereco({ ...endereco, cep: e.target.value })} />
 
           <Box mt={3} display="flex" justifyContent="space-between" alignItems="center">
             <Button variant="outlined" onClick={() => navigate("/carrinho")}>Voltar</Button>
@@ -195,16 +198,56 @@ const Checkout = () => {
                   {endereco.rua}, {endereco.numero} - {endereco.bairro}<br />
                   {endereco.cidade} - {endereco.estado}, {endereco.cep}
                 </Typography>
-                <Typography variant="body2" sx={{ mt: 2 }}><strong>Total a pagar:</strong> R$ {(JSON.parse(localStorage.getItem("carrinho")) || []).reduce((acc, item) => acc + item.precoTotal, 0).toFixed(2)}</Typography>
+                <Typography variant="body2" sx={{ mt: 2 }}>
+                  <strong>Total a pagar:</strong> R$ {resumoPedido.total.toFixed(2)}
+                </Typography>
 
                 <Box mt={2}>
                   <Typography variant="subtitle2">Itens:</Typography>
-                  {(JSON.parse(localStorage.getItem("carrinho")) || []).map((item, idx) => (
-                    <Typography key={idx} variant="body2">
-                      • {item.quantidade}x {item.nome} — R$ {item.precoTotal.toFixed(2)}
-                    </Typography>
+                  {resumoPedido.itens.map((item, idx) => (
+                    <Box key={idx} sx={{ mb: 1 }}>
+                      <Typography variant="body2" fontWeight="bold">
+                        • {item.quantidade}x {item.nome} — R$ {item.precoTotal.toFixed(2)}
+                      </Typography>
+
+                      {item.saboresSelecionados?.length > 0 && (
+                        <Typography variant="body2" sx={{ ml: 2 }}>
+                          Sabores: {item.saboresSelecionados.join(" / ")}
+                        </Typography>
+                      )}
+
+                      {item.bordaSelecionada && (
+                        <Typography variant="body2" sx={{ ml: 2 }}>
+                          Borda: {item.bordaSelecionada.nome} (+R$ {item.bordaSelecionada.preco.toFixed(2)})
+                        </Typography>
+                      )}
+
+                      {item.adicionalSelecionado && (
+                        <Typography variant="body2" sx={{ ml: 2 }}>
+                          Adicional: {item.adicionalSelecionado.nome} (+R$ {item.adicionalSelecionado.preco.toFixed(2)})
+                        </Typography>
+                      )}
+
+                      {item.complementosSelecionados?.length > 0 && (
+                        <Typography variant="body2" sx={{ ml: 2 }}>
+                          Complementos:{" "}
+                          {item.complementosSelecionados.map((c, i) => (
+                            <span key={i}>
+                              {c.nome} (+R$ {c.preco.toFixed(2)}){i < item.complementosSelecionados.length - 1 ? ", " : ""}
+                            </span>
+                          ))}
+                        </Typography>
+                      )}
+
+                      {item.observacao && (
+                        <Typography variant="body2" sx={{ ml: 2 }}>
+                          Observações: {item.observacao}
+                        </Typography>
+                      )}
+                    </Box>
                   ))}
                 </Box>
+
               </Paper>
             </Box>
           )}
