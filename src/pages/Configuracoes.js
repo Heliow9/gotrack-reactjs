@@ -21,7 +21,7 @@ const Configuracoes = () => {
     horarioInicio: "",
     horarioFim: "",
     pedidosPorEntregador: "",
-
+    chavePix: "", // ✅ novo campo
     enderecoCep: "",
     enderecoRua: "",
     enderecoNumero: "",
@@ -100,7 +100,7 @@ const Configuracoes = () => {
     }
   };
 
-  const MAPBOX_API_KEY =  'pk.eyJ1IjoiaGVsaW93OSIsImEiOiJjbTljNDRnazgwZ3BmMmxwdW9nbWk1c3ZmIn0.NR96Um-T_CqTI3jDb7c2OQ';
+  const MAPBOX_API_KEY = 'pk.eyJ1IjoiaGVsaW93OSIsImEiOiJjbTljNDRnazgwZ3BmMmxwdW9nbWk1c3ZmIn0.NR96Um-T_CqTI3jDb7c2OQ';
 
   const buscarCoordenadasEndereco = async (formAtualizado) => {
     const {
@@ -159,6 +159,7 @@ const Configuracoes = () => {
       const payload = {
         ...form,
         localizacao: coordenadas ?? form.localizacao,
+        
       };
 
       await axios.put(
@@ -194,6 +195,9 @@ const Configuracoes = () => {
         </Grid>
         <Grid item xs={12} sm={6}>
           <TextField label="Telefone" name="telefone" fullWidth value={form.telefone} onChange={handleChange} />
+        </Grid>
+        <Grid item xs={12} sm={6}>
+          <TextField label="Chave Pix (CNPJ, Email ou Aleatória)" name="chavePix" fullWidth value={form.chavePix} onChange={handleChange} />
         </Grid>
         <Grid item xs={12} sm={6}>
           <TextField label="Logo URL" name="logoUrl" fullWidth value={form.logoUrl} onChange={handleChange} />
@@ -278,23 +282,31 @@ const Configuracoes = () => {
       <Typography variant="h6">Integração com iFood</Typography>
       <FormControlLabel
         control={<Switch checked={form.ifoodStatus} onChange={handleChange} name="ifoodStatus" />}
-        label="Ativo"
+        label="Integração Ativa"
       />
-      <Grid container spacing={2}>
-        <Grid item xs={12} sm={6}>
-          <TextField label="Identificador" name="ifoodIdentificador" fullWidth value={form.ifoodIdentificador} onChange={handleChange} />
-        </Grid>
-        <Grid item xs={12} sm={6}>
-          <FormControlLabel
-            control={<Switch checked={form.ifoodPrecisaConfirmacao} onChange={handleChange} name="ifoodPrecisaConfirmacao" />}
-            label="Precisa de Confirmação"
-          />
-          <FormControlLabel
-            control={<Switch checked={form.ifoodIgnorarPronto} onChange={handleChange} name="ifoodIgnorarPronto" />}
-            label="Ignorar Pronto do iFood"
-          />
-        </Grid>
-      </Grid>
+
+      {!form.ifoodAccessToken ? (
+        <Box mt={1} mb={2}>
+          <Button
+            variant="contained"
+            color="error"
+            onClick={() => {
+              const restauranteId = localStorage.getItem("_id");
+              window.location.href = `https://2e32-200-124-165-255.ngrok-free.app/api/ifood/auth/start/${restauranteId}`;
+            }}
+          >
+            Conectar com iFood
+          </Button>
+          <Typography variant="caption" display="block" color="text.secondary" mt={1}>
+            Após clicar, você será redirecionado para autorizar sua conta do iFood.
+          </Typography>
+        </Box>
+      ) : (
+        <Typography variant="body2" color="green" mt={1} mb={2}>
+          ✅ Conta do iFood conectada com sucesso.
+        </Typography>
+      )}
+
 
       <Divider sx={{ my: 4 }} />
       <Box textAlign="right">

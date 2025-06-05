@@ -14,7 +14,8 @@ import {
   Fade,
   useScrollTrigger,
   Container,
-  Divider
+  Divider,
+  IconButton
 } from "@mui/material";
 import HomeIcon from "@mui/icons-material/Home";
 import Badge from "@mui/material/Badge";
@@ -22,6 +23,11 @@ import ShoppingCartIcon from "@mui/icons-material/ShoppingCart";
 import ListAltIcon from "@mui/icons-material/ListAlt";
 import ModalProduto from "../components/ModalProduto";
 import axios from "axios";
+import ArrowBackIosNewIcon from '@mui/icons-material/ArrowBackIosNew';
+import ArrowForwardIosIcon from '@mui/icons-material/ArrowForwardIos';
+import AccessTimeIcon from '@mui/icons-material/AccessTime';
+import { Chip } from '@mui/material';
+
 
 const DEFAULT_IMAGE_URL = "https://cdn-icons-png.flaticon.com/512/1404/1404945.png";
 const API_URL = process.env.REACT_APP_API_URL || "http://localhost:10000";
@@ -36,6 +42,19 @@ const Publico = () => {
   const [modalAberto, setModalAberto] = useState(false);
   const [produtoSelecionado, setProdutoSelecionado] = useState(null);
   const [quantidadeCarrinho, setQuantidadeCarrinho] = useState(0);
+  const [statusLoja, setStatusLoja] = useState("Carregando...");
+  const [corStatus, setCorStatus] = useState("default");
+
+  const scrollRef = useRef(null);
+
+  const scrollLeft = () => {
+    scrollRef.current.scrollBy({ left: -150, behavior: 'smooth' });
+  };
+
+  const scrollRight = () => {
+    scrollRef.current.scrollBy({ left: 150, behavior: 'smooth' });
+  };
+
 
   useEffect(() => {
     const atualizarQuantidade = () => {
@@ -55,16 +74,54 @@ const Publico = () => {
     if (!restauranteData) return navigate("/erro");
     const restaurante = JSON.parse(restauranteData);
     setRestaurante(restaurante);
+    const dias = ['domingo', 'segunda', 'terca', 'quarta', 'quinta', 'sexta', 'sabado'];
+    const hoje = new Date();
+    const diaAtual = dias[hoje.getDay()];
+    const horarioHoje = restaurante.horariosFuncionamento?.[diaAtual];
+
+    if (!horarioHoje || horarioHoje.fechado) {
+      setStatusLoja("Fechado");
+    } else {
+      const [abreHora, abreMin] = horarioHoje.abre.split(":").map(Number);
+      const [fechaHora, fechaMin] = horarioHoje.fecha.split(":").map(Number);
+
+      const agora = new Date();
+      const horarioAbre = new Date(agora);
+      horarioAbre.setHours(abreHora, abreMin, 0, 0);
+
+      const horarioFecha = new Date(agora);
+      horarioFecha.setHours(fechaHora, fechaMin, 0, 0);
+
+      if (agora < horarioAbre || agora >= horarioFecha) {
+        setStatusLoja("Fechado");
+      } else {
+        setStatusLoja("Aberto");
+      }
+    }
+
+
 
     const fetchProdutos = async () => {
       try {
         const res = await axios.get(`${API_URL}/publico/${restaurante.slugIdentificador}`);
-        setProdutos(res.data.produtosPorCategoria);
+
+        const categoriasFiltradas = (res.data.produtosPorCategoria || [])
+          .filter(cat => cat.ativa !== false) // só categorias ativas
+          .map(cat => ({
+            ...cat,
+            itens: (cat.itens || [])
+              .filter(prod => prod.ativo !== false) // só produtos ativos
+              .sort((a, b) => (a.ordem || 0) - (b.ordem || 0))
+          }));
+
+        setProdutos(categoriasFiltradas);
+        console.log(categoriasFiltradas)
       } catch (err) {
         console.error("Erro ao buscar produtos:", err);
         navigate("/erro");
       }
     };
+
 
     fetchProdutos();
   }, []);
@@ -90,8 +147,13 @@ const Publico = () => {
       window.scrollTo({ top: offsetTop - headerOffset, behavior: "smooth" });
     }
   };
-
   const abrirModalProduto = (item, categoriaType) => {
+    // Corrige os tiposExtras com os itens preenchidos (vindos de item.extras)
+    const tiposExtrasCorrigidos = (item.tiposExtras || []).map(extra => ({
+      ...extra,
+      itens: item.extras?.[extra.nome] || []
+    }));
+
     setProdutoSelecionado({
       ...item,
       precoBase: item.precoBase,
@@ -100,36 +162,119 @@ const Publico = () => {
       bordasDisponiveis: item.bordas || [],
       complementos: item.complementos || [],
       adicionais: item.adicionais || [],
+      tiposExtras: tiposExtrasCorrigidos
     });
+
     setModalAberto(true);
   };
+
+
+
+
 
   return (
     <Box sx={{ pb: 10, backgroundColor: "#f7f7f7", minHeight: '100vh' }}>
       <AppBar position="sticky" color="success" sx={{ zIndex: 1201 }}>
-        <Toolbar sx={{ justifyContent: "space-between", px: 2 }}>
-          <Box display="flex" alignItems="center" gap={2}>
+        <Toolbar sx={{ px: 2, flexDirection: "row", justifyContent: "space-between", flexWrap: "wrap", gap: 1 }}>
+          <Box display="flex" alignItems="center" gap={1} sx={{ flex: 1, minWidth: 0 }}>
             {renderAvatar()}
-            <Typography variant="h6" fontWeight="bold">
+            <Typography
+              variant="h6"
+              fontWeight="bold"
+              noWrap
+              sx={{ color: 'white', overflow: 'hidden', textOverflow: 'ellipsis' }}
+            >
               {restaurante?.nome || "Carregando..."}
             </Typography>
           </Box>
+
+          <Chip
+            icon={
+              <AccessTimeIcon
+                sx={{ color: statusLoja === "Aberto" ? "#fff" : "#fff" }}
+                fontSize="small"
+              />
+            }
+            label={statusLoja}
+            size="small"
+            sx={{
+              bgcolor: statusLoja === "Aberto" ? "#4CAF50" : "#f44336",
+              color: "#fff",
+              fontWeight: 500,
+              height: 28,
+              '& .MuiChip-icon': {
+                color: "#fff"
+              },
+            }}
+          />
+
         </Toolbar>
+
       </AppBar>
 
-      <Box sx={{ position: 'sticky', top: 64, zIndex: 1100, backgroundColor: '#fff', borderBottom: '1px solid #ddd', px: 1, py: 1, overflowX: 'auto', display: 'flex', gap: 1 }}>
-        {produtos.map((categoria, i) => (
-          <Button
-            key={i}
-            variant="outlined"
-            size="small"
-            onClick={() => scrollToSection(i)}
-            sx={{ borderRadius: "20px", textTransform: "none", px: 2, whiteSpace: "nowrap" }}
-          >
-            {categoria.nome}
-          </Button>
-        ))}
+      <Box
+        sx={{
+          position: 'sticky',
+          top: 64,
+          zIndex: 1100,
+          backgroundColor: '#fff',
+          borderBottom: '1px solid #ddd',
+          display: 'flex',
+          alignItems: 'center',
+          px: 1,
+          py: 1,
+        }}
+      >
+        {/* Seta esquerda */}
+        <IconButton onClick={scrollLeft} size="small">
+          <ArrowBackIosNewIcon fontSize="small" />
+        </IconButton>
+
+        {/* Lista rolável */}
+        <Box
+          ref={scrollRef}
+          sx={{
+            overflowX: 'auto',
+            display: 'flex',
+            gap: 1,
+            whiteSpace: 'nowrap',
+            flex: 1,
+            scrollbarWidth: 'none',
+            '&::-webkit-scrollbar': { display: 'none' },
+          }}
+        >
+          {produtos.map((categoria, i) => (
+            <Button
+              key={i}
+              variant="outlined"
+              size="small"
+              onClick={() => scrollToSection(i)}
+              title={categoria.nome}
+              sx={{
+                borderRadius: "20px",
+                textTransform: "none",
+                px: 2,
+                maxWidth: 160,
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+                wordBreak: "keep-all",
+                fontSize: "0.75rem",
+                minHeight: "36px",
+                flexShrink: 0,
+              }}
+            >
+              {categoria.nome}
+            </Button>
+          ))}
+        </Box>
+
+        {/* Seta direita */}
+        <IconButton onClick={scrollRight} size="small">
+          <ArrowForwardIosIcon fontSize="small" />
+        </IconButton>
       </Box>
+
 
       <Container sx={{ py: 2 }}>
         {produtos.map((categoria, i) => (
@@ -163,7 +308,10 @@ const Publico = () => {
                           {item.descricao}
                         </Typography>
                         <Typography variant="body2" color="primary" fontWeight="bold" sx={{ mt: 1 }}>
-                          R$ {parseFloat(item.precoBase).toFixed(2)}
+                          {item.categoriaType === "pizza" && item.sabores?.length > 1
+                            ? `a partir de R$ ${Math.min(...item.sabores.map(s => parseFloat(s.preco || 0))).toFixed(2)}`
+                            : `R$ ${parseFloat(item.precoBase || 0).toFixed(2)}`
+                          }
                         </Typography>
                       </Box>
                       <Avatar

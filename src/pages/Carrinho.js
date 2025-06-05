@@ -11,7 +11,7 @@ import {
   Paper,
   AppBar,
   Toolbar,
-  Slide,
+  Fade,
   Chip
 } from "@mui/material";
 import DeleteIcon from "@mui/icons-material/Delete";
@@ -61,43 +61,75 @@ const Carrinho = () => {
   };
 
 const renderExtras = (item) => {
-  const chips = [];
+  const blocos = [];
 
-  // Sabores (continua como array de string)
+  // Sabores
   if (item.saboresSelecionados?.length > 0) {
-    chips.push(`Sabores: ${item.saboresSelecionados.join(" / ")}`);
+    blocos.push({
+      titulo: "Sabores",
+      opcoes: item.saboresSelecionados.map((s) => `• ${s}`)
+    });
   }
 
-  // Borda (agora é objeto)
+  // Borda
   if (item.bordaSelecionada) {
-    chips.push(`Borda: ${item.bordaSelecionada.nome} (+R$ ${item.bordaSelecionada.preco.toFixed(2)})`);
+    blocos.push({
+      titulo: "Borda",
+      opcoes: [`• ${item.bordaSelecionada.nome} (+R$ ${item.bordaSelecionada.preco.toFixed(2)})`]
+    });
   }
 
-  // Adicional (agora é objeto)
+  // Adicional
   if (item.adicionalSelecionado) {
-    chips.push(`Adicional: ${item.adicionalSelecionado.nome} (+R$ ${item.adicionalSelecionado.preco.toFixed(2)})`);
+    blocos.push({
+      titulo: "Adicional",
+      opcoes: [`• ${item.adicionalSelecionado.nome} (+R$ ${item.adicionalSelecionado.preco.toFixed(2)})`]
+    });
   }
 
-  // Complementos (agora é array de objetos)
+  // Complementos
   if (item.complementosSelecionados?.length > 0) {
-    item.complementosSelecionados.forEach((comp) => {
-      chips.push(`Comp: ${comp.nome} (+R$ ${comp.preco.toFixed(2)})`);
+    const opcoes = item.complementosSelecionados.map((comp) => 
+      `• ${comp.nome} (+R$ ${comp.preco.toFixed(2)})`
+    );
+    blocos.push({ titulo: "Complementos", opcoes });
+  }
+
+  // tiposExtras agrupados
+  if (item.tiposExtrasSelecionados && typeof item.tiposExtrasSelecionados === "object") {
+    Object.entries(item.tiposExtrasSelecionados).forEach(([tipo, opcoes]) => {
+      if (Array.isArray(opcoes) && opcoes.length > 0) {
+        blocos.push({
+          titulo: tipo,
+          opcoes: opcoes.map((op) => 
+            `• ${op.nome}${op.preco ? ` (+R$ ${op.preco.toFixed(2)})` : ""}`
+          )
+        });
+      }
     });
   }
 
   // Observação
   if (item.observacao) {
-    chips.push(`Obs: ${item.observacao}`);
+    blocos.push({ titulo: "Observação", opcoes: [`• ${item.observacao}`] });
   }
 
   return (
-    <Box display="flex" flexWrap="wrap" gap={1} mt={1}>
-      {chips.map((text, i) => (
-        <Chip key={i} label={text} size="small" color="default" />
+    <Box mt={1}>
+      {blocos.map((bloco, idx) => (
+        <Box key={idx} mb={1}>
+          <Typography variant="caption" fontWeight="bold">{bloco.titulo}:</Typography>
+          {bloco.opcoes.map((op, i) => (
+            <Typography key={i} variant="caption" display="block" ml={1}>
+              {op}
+            </Typography>
+          ))}
+        </Box>
       ))}
     </Box>
   );
 };
+
 
 
   return (
@@ -137,7 +169,7 @@ const renderExtras = (item) => {
         ) : (
           <>
             {itensCarrinho.map((item, idx) => (
-              <Slide in direction="up" key={idx} timeout={300}>
+              <Fade in direction="up" key={idx} timeout={830}>
                 <Paper
                   elevation={3}
                   sx={{ p: 2, mb: 2, display: "flex", alignItems: "center", gap: 2 }}
@@ -166,7 +198,7 @@ const renderExtras = (item) => {
                     </Box>
                   </Box>
                 </Paper>
-              </Slide>
+              </Fade>
             ))}
           </>
         )}

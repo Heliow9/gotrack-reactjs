@@ -8,6 +8,7 @@ import {
   Button,
   Menu,
   MenuItem,
+  Chip
 } from "@mui/material";
 import { FaMapMarkerAlt, FaPhone, FaMoneyBillWave } from "react-icons/fa";
 import { useMapContext } from "../Context/MapContext";
@@ -254,16 +255,16 @@ const PedidosEmAndamento = () => {
         Pedidos em Andamento
       </Typography>
       {selectedPedidos.length > 0 && (
-    <Button
-      variant="contained"
-      color="secondary"
-      size="small"
-      onClick={handleAbrirMenuMulti}
-      disabled={deliverers.length === 0}
-    >
-      Escolher entregador ({selectedPedidos.length} pedidos)
-    </Button>
-  )}
+        <Button
+          variant="contained"
+          color="secondary"
+          size="small"
+          onClick={handleAbrirMenuMulti}
+          disabled={deliverers.length === 0}
+        >
+          Escolher entregador ({selectedPedidos.length} pedidos)
+        </Button>
+      )}
       {pedidos.length > 0 ? (
         <>
           <List>
@@ -280,15 +281,13 @@ const PedidosEmAndamento = () => {
                   mx: 1,
                 }}
               >
-                <Box display="flex" justifyContent="space-between" alignItems="center">
+                <Box display="flex" alignItems="center" gap={1}>
                   <Typography variant="subtitle1" fontWeight="bold" color="#ff7b00">
                     {pedido.nomeCliente}
                   </Typography>
-                  <input
-                    type="checkbox"
-                    checked={selectedPedidos.includes(pedido._id)}
-                    onChange={() => togglePedidoSelecionado(pedido._id)}
-                  />
+                  {pedido.origem === "ifood" && (
+                    <Chip label="iFood" size="small" color="error" />
+                  )}
                 </Box>
                 <Box display="flex" alignItems="center" mt={1} mb={0.5}>
                   <FaMapMarkerAlt size={14} style={{ marginRight: 6 }} />
@@ -340,7 +339,7 @@ const PedidosEmAndamento = () => {
               </Paper>
             ))}
           </List>
-         
+
         </>
 
       ) : (

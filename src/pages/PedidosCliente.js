@@ -174,11 +174,18 @@ const PedidosCliente = () => {
 
   return (
     <Box>
-      <AppBar position="sticky" color="success">
-        <Toolbar>
-          <Typography variant="h6" fontWeight="bold">Meus Pedidos</Typography>
-        </Toolbar>
-      </AppBar>
+ <AppBar position="sticky" color="success">
+  <Toolbar sx={{ display: "flex", alignItems: "center" }}>
+    <Button
+      color="inherit"
+      onClick={() => navigate("/pedido")}
+      sx={{ mr: 2, minWidth: "auto" }}
+    >
+      ⬅
+    </Button>
+    <Typography variant="h6" fontWeight="bold">Meus Pedidos</Typography>
+  </Toolbar>
+</AppBar>
 
       <Container sx={{ py: 3 }}>
         <Typography variant="h6" fontWeight="bold" gutterBottom>

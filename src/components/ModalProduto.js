@@ -1,267 +1,289 @@
 import React, { useState, useEffect } from "react";
 import {
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
-  Button,
-  Typography,
-  TextField,
-  FormControlLabel,
-  Checkbox,
-  RadioGroup,
-  Radio,
-  FormControl,
-  FormLabel,
-  Box,
-  Alert,
-  Divider,
-  Grid,
-  Snackbar
+  Dialog, DialogTitle, DialogContent, DialogActions, Button,
+  Typography, TextField, FormControlLabel, Checkbox, RadioGroup,
+  Radio, FormControl, Box, Alert, Snackbar
 } from "@mui/material";
 
 const ModalProduto = ({ open, onClose, produto }) => {
   const [saboresSelecionados, setSaboresSelecionados] = useState([]);
-  const [bordaSelecionada, setBordaSelecionada] = useState('nenhum');
+  const [bordaSelecionada, setBordaSelecionada] = useState("nenhum");
   const [complementosSelecionados, setComplementosSelecionados] = useState([]);
+  const [adicionalSelecionado, setAdicionalSelecionado] = useState("nenhum");
+  const [tiposExtrasSelecionados, setTiposExtrasSelecionados] = useState({});
   const [observacao, setObservacao] = useState("");
   const [quantidade, setQuantidade] = useState(1);
   const [precoTotal, setPrecoTotal] = useState(0);
-  const [adicionalSelecionado, setAdicionalSelecionado] = useState("nenhum");
   const [showAlert, setShowAlert] = useState(false);
   const [showSnackbar, setShowSnackbar] = useState(false);
 
   useEffect(() => {
-    let total = 0;
-    if (produto.categoriaType === "pizza") {
-      const maiorPreco = saboresSelecionados.length > 0
-        ? Math.max(...saboresSelecionados.map(nome => {
-          const sabor = produto.saboresDisponiveis?.find(s => s.nome === nome);
-          return parseFloat(sabor?.preco || 0);
-        }))
-        : 0;
-      total += maiorPreco;
-    } else {
-      total += produto.precoBase;
+    let total = produto.precoBase || 0;
+
+    if (produto.categoriaType === "pizza" && saboresSelecionados.length > 0) {
+      const precos = saboresSelecionados.map(nome => {
+        const sabor = produto.saboresDisponiveis?.find(s => s.nome === nome);
+        return parseFloat(sabor?.preco || 0);
+      });
+
+      if (produto.calculoPrecoPor === "media") {
+        const soma = precos.reduce((acc, v) => acc + v, 0);
+        total = soma / precos.length;
+      } else {
+        total = Math.max(...precos);
+      }
     }
 
-    if (bordaSelecionada && bordaSelecionada !== "nenhum") {
+    if (bordaSelecionada !== "nenhum") {
       const borda = produto.bordasDisponiveis?.find(b => b.nome === bordaSelecionada);
-      total += borda?.preco || 0;
+      total += parseFloat(borda?.preco || 0);
     }
 
-    if (adicionalSelecionado && adicionalSelecionado !== "nenhum") {
+    if (adicionalSelecionado !== "nenhum") {
       const adicional = produto.adicionais?.find(a => a.nome === adicionalSelecionado);
-      total += adicional?.preco || 0;
+      total += parseFloat(adicional?.preco || 0);
     }
 
     complementosSelecionados.forEach(nome => {
-      const complemento = produto.complementos?.find(c => c.nome === nome);
-      total += complemento?.preco || 0;
+      const comp = produto.complementos?.find(c => c.nome === nome);
+      total += parseFloat(comp?.preco || 0);
+    });
+
+    Object.entries(tiposExtrasSelecionados).forEach(([_, itens]) => {
+      itens.forEach(item => {
+        total += parseFloat(item.preco || 0);
+      });
     });
 
     total *= quantidade;
-    setPrecoTotal(isNaN(total) || !isFinite(total) ? 0 : total);
-  }, [saboresSelecionados, bordaSelecionada, complementosSelecionados, adicionalSelecionado, quantidade, produto]);
+    setPrecoTotal(Number.isFinite(total) ? total : 0);
+  }, [saboresSelecionados, bordaSelecionada, adicionalSelecionado, complementosSelecionados, tiposExtrasSelecionados, quantidade]);
 
-  const toggleComplemento = (nome) => {
-    setComplementosSelecionados(prev =>
-      prev.includes(nome) ? prev.filter(c => c !== nome) : [...prev, nome]
-    );
-  };
-
-  const toggleSabor = (nome) => {
-    if (saboresSelecionados.includes(nome)) {
-      setSaboresSelecionados(saboresSelecionados.filter(s => s !== nome));
-    } else if (saboresSelecionados.length < 2) {
-      setSaboresSelecionados([...saboresSelecionados, nome]);
+  useEffect(() => {
+    if (produto?.saboresDisponiveis?.length === 1) {
+      setSaboresSelecionados([produto.saboresDisponiveis[0].nome]);
     }
-  };
+
+    const autoSelectExtras = {};
+    produto?.tiposExtras?.forEach(tipo => {
+      if (tipo.tipoSelecion === "unico" && tipo.itens?.length === 1) {
+        autoSelectExtras[tipo.nome] = [tipo.itens[0]];
+      }
+      if (tipo.tipoSelecion === "multiplo" && tipo.obrigatorio && tipo.minimoSelecionados > 0) {
+        autoSelectExtras[tipo.nome] = tipo.itens?.slice(0, tipo.minimoSelecionados) || [];
+      }
+    });
+    setTiposExtrasSelecionados(autoSelectExtras);
+  }, [produto]);
 
   const isValid = () => {
     if (produto.categoriaType === "pizza") {
-      return saboresSelecionados.length > 0 && bordaSelecionada && adicionalSelecionado;
+      const requiredCount = produto.maxSabores || 2;
+      if (produto.saboresDisponiveis?.length > 1 && saboresSelecionados.length !== requiredCount) return false;
+      if (produto.saboresDisponiveis?.length === 1 && saboresSelecionados.length !== 1) return false;
     }
-    return true; // produtos simples sempre válidos
+
+    const tipos = produto.tiposExtras || [];
+    for (const tipo of tipos) {
+      const selecionados = tiposExtrasSelecionados[tipo.nome] || [];
+      if (tipo.obrigatorio && selecionados.length === 0) return false;
+      if (tipo.minimoSelecionados && selecionados.length < tipo.minimoSelecionados) return false;
+      if (tipo.maximoSelecionados && selecionados.length > tipo.maximoSelecionados) return false;
+    }
+
+    return true;
   };
 
+  const handleAddToCart = () => {
+    if (!isValid()) {
+      setShowAlert(true);
+      return;
+    }
 
-const handleAddToCart = () => {
-  if (!isValid()) {
-    setShowAlert(true);
-    return;
-  }
+    const pedido = {
+      produtoId: produto._id,
+      nome: produto.nome,
+      imagem: produto.imagem,
+      categoriaType: produto.categoriaType,
+      saboresSelecionados,
+      bordaSelecionada: bordaSelecionada === "nenhum" ? null : produto.bordasDisponiveis?.find(b => b.nome === bordaSelecionada),
+      adicionalSelecionado: adicionalSelecionado === "nenhum" ? null : produto.adicionais?.find(a => a.nome === adicionalSelecionado),
+      complementosSelecionados: produto.complementos?.filter(c => complementosSelecionados.includes(c.nome)) || [],
+      tiposExtrasSelecionados,
+      observacao,
+      quantidade,
+      precoUnitario: +(precoTotal / quantidade).toFixed(2),
+      precoTotal
+    };
 
-  // pega objetos completos das escolhas
-  const bordaObj = produto.bordasDisponiveis?.find(b => b.nome === bordaSelecionada);
-  const adicionalObj = produto.adicionais?.find(a => a.nome === adicionalSelecionado);
-  const complementosObj = complementoSelecionados => 
-    produto.complementos?.filter(c => complementoSelecionados.includes(c.nome)) || [];
-
-  const pedido = {
-    produtoId: produto.id,
-    nome: produto.nome,
-    imagem: produto.imagem || null,
-    categoriaType: produto.categoriaType,
-    saboresSelecionados, // array simples já tá ok
-    bordaSelecionada: bordaSelecionada === "nenhum" ? null : {
-      nome: bordaObj?.nome,
-      preco: parseFloat(bordaObj?.preco || 0)
-    },
-    adicionalSelecionado: adicionalSelecionado === "nenhum" ? null : {
-      nome: adicionalObj?.nome,
-      preco: parseFloat(adicionalObj?.preco || 0)
-    },
-    complementosSelecionados: complementosSelecionados.length > 0
-      ? complementosObj(complementosSelecionados).map(c => ({
-          nome: c.nome,
-          preco: parseFloat(c.preco || 0)
-        }))
-      : [],
-    observacao,
-    quantidade,
-    precoUnitario: +(precoTotal / quantidade).toFixed(2),
-    precoTotal,
+    const carrinhoAtual = JSON.parse(localStorage.getItem("carrinho")) || [];
+    carrinhoAtual.push(pedido);
+    localStorage.setItem("carrinho", JSON.stringify(carrinhoAtual));
+    setShowSnackbar(true);
+    onClose();
   };
-
-  // salvar no carrinho
-  const carrinhoAtual = JSON.parse(localStorage.getItem("carrinho")) || [];
-  carrinhoAtual.push(pedido);
-  localStorage.setItem("carrinho", JSON.stringify(carrinhoAtual));
-
-  setShowSnackbar(true);
-  onClose();
-};
-
 
 
   return (
     <>
       <Dialog open={open} onClose={onClose} fullWidth>
-        <DialogTitle>
-          {produto.nome}
-        </DialogTitle>
+        <DialogTitle>{produto.nome}</DialogTitle>
 
         <DialogContent>
           <Typography variant="h6" fontWeight="bold" sx={{ mb: 2 }}>
-            Total: R$ {precoTotal.toFixed(2)}
+           {produto.categoriaType === "pizza" && produto.saboresDisponiveis?.length > 1 ? (
+            <Typography variant="subtitle2" fontWeight="normal" color="text.secondary">
+              a partir de R$ {
+                produto.saboresDisponiveis.reduce(
+                  (min, s) => Math.min(min, parseFloat(s.preco || Infinity)),
+                  Infinity
+                ) !== Infinity
+                  ? produto.saboresDisponiveis.reduce(
+                      (min, s) => Math.min(min, parseFloat(s.preco || Infinity)),
+                      Infinity
+                    ).toFixed(2)
+                  : produto.precoBase.toFixed(2)
+              }
+            </Typography>
+          ) : (
+            <Typography variant="subtitle2" fontWeight="normal" color="text.secondary">
+              R$ {produto.precoBase?.toFixed(2)}
+            </Typography>
+          )}
+
           </Typography>
 
           {showAlert && (
             <Alert severity="warning" onClose={() => setShowAlert(false)} sx={{ mb: 2 }}>
-              Por favor, selecione sabor, borda e adicional para continuar.
+              Por favor, preencha as opções obrigatórias.
             </Alert>
           )}
 
-          {produto.categoriaType === "pizza" && (
+          {produto.categoriaType === "pizza" && produto.saboresDisponiveis?.length > 0 && (
             <>
-              <Typography variant="h6" fontWeight="bold" sx={{ mt: 2, mb: 1 }}>
-                Sabores (máx 2)
+              <Typography variant="subtitle1" sx={{ mt: 2 }}>
+                Sabores {produto.saboresDisponiveis.length > 1 ? `(máx ${produto.maxSabores || 2})` : ""}
               </Typography>
-              <Divider sx={{ mb: 2 }} />
-              <Box display="flex" flexDirection="column" gap={1}>
-                {produto.saboresDisponiveis?.map((sabor, idx) => {
-                  const preco = parseFloat(sabor.preco || 0);
-                  return (
-                    <FormControlLabel
-                      key={idx}
-                      control={
-                        <Checkbox
-                          checked={saboresSelecionados.includes(sabor.nome)}
-                          onChange={() => toggleSabor(sabor.nome)}
-                          disabled={
-                            !saboresSelecionados.includes(sabor.nome) &&
-                            saboresSelecionados.length >= 2
+              <Box display="flex" flexDirection="column">
+                {produto.saboresDisponiveis.map((s, i) => (
+                  <FormControlLabel
+                    key={i}
+                    control={
+                      <Checkbox
+                        checked={saboresSelecionados.includes(s.nome)}
+                        disabled={produto.saboresDisponiveis.length === 1}
+                        onChange={() => {
+                          if (saboresSelecionados.includes(s.nome)) {
+                            setSaboresSelecionados(prev => prev.filter(n => n !== s.nome));
+                          } else if (saboresSelecionados.length < (produto.maxSabores || 2)) {
+                            setSaboresSelecionados(prev => [...prev, s.nome]);
                           }
-                        />
-                      }
-                      label={
-                        <Box display="flex" flexDirection="column">
-                          <Typography variant="body2" fontWeight="bold">{sabor.nome}</Typography>
-                          <Typography variant="caption" color="text.secondary">
-                            {preco > 0 ? `+ R$ ${preco.toFixed(2)}` : "Grátis"}
-                          </Typography>
-                        </Box>
-                      }
-                    />
-                  );
-                })}
-              </Box>
-
-
-              <FormControl component="fieldset" sx={{ mt: 3 }}>
-                <FormLabel component="legend">Escolha a borda</FormLabel>
-                <RadioGroup
-                  value={bordaSelecionada || ""}
-                  onChange={(e) => setBordaSelecionada(e.target.value)}
-                >
-                  <FormControlLabel
-                    value="nenhum"
-                    control={<Radio />}
-                    label="Sem borda"
-                  />
-                  {produto.bordasDisponiveis?.map((b, idx) => (
-                    <FormControlLabel
-                      key={idx}
-                      value={b.nome}
-                      control={<Radio />}
-                      label={`${b.nome} ${b.preco ? `(+R$ ${b.preco})` : ""}`}
-                    />
-                  ))}
-                </RadioGroup>
-              </FormControl>
-            </>
-          )}
-
-          {produto.adicionais?.length > 0 && (
-            <>
-              <Typography variant="h6" fontWeight="bold" sx={{ mt: 3, mb: 1 }}>
-                Adicionais
-              </Typography>
-              <Divider sx={{ mb: 2 }} />
-              <FormControl component="fieldset">
-                <RadioGroup
-                  value={adicionalSelecionado}
-                  onChange={(e) => setAdicionalSelecionado(e.target.value)}
-                >
-                  <FormControlLabel
-                    value="nenhum"
-                    control={<Radio />}
-                    label="Sem adicional"
-                  />
-                  {produto.adicionais.map((ad, idx) => (
-                    <FormControlLabel
-                      key={idx}
-                      value={ad.nome}
-                      control={<Radio />}
-                      label={`${ad.nome} (+R$ ${ad.preco})`}
-                    />
-                  ))}
-                </RadioGroup>
-              </FormControl>
-            </>
-          )}
-
-          {produto.complementos?.length > 0 && (
-            <>
-              <Typography variant="h6" fontWeight="bold" sx={{ mt: 3, mb: 1 }}>
-                Complementos
-              </Typography>
-              <Divider sx={{ mb: 2 }} />
-              <Box display="flex" flexDirection="column" gap={1}>
-                {produto.complementos.map((comp, idx) => (
-                  <FormControlLabel
-                    key={idx}
-                    control={<Checkbox
-                      checked={complementosSelecionados.includes(comp.nome)}
-                      onChange={() => toggleComplemento(comp.nome)}
-                    />}
-                    label={`${comp.nome} (+R$ ${comp.preco})`}
+                        }}
+                      />
+                    }
+                    label={`${s.nome} ${s.preco ? `(+R$ ${s.preco})` : ""}`}
                   />
                 ))}
               </Box>
             </>
           )}
+
+          {produto.bordasDisponiveis?.length > 0 && (
+            <Box sx={{ mt: 3 }}>
+              <Typography fontWeight="bold">Borda</Typography>
+              <RadioGroup
+                value={bordaSelecionada}
+                onChange={(e) => setBordaSelecionada(e.target.value)}
+              >
+                <FormControlLabel value="nenhum" control={<Radio />} label="Sem borda" />
+                {produto.bordasDisponiveis.map((b, i) => (
+                  <FormControlLabel
+                    key={i}
+                    value={b.nome}
+                    control={<Radio />}
+                    label={`${b.nome} (+R$ ${b.preco})`}
+                  />
+                ))}
+              </RadioGroup>
+            </Box>
+          )}
+
+          {produto.adicionais?.length > 0 && (
+            <Box sx={{ mt: 3 }}>
+              <Typography fontWeight="bold">Adicional</Typography>
+              <RadioGroup
+                value={adicionalSelecionado}
+                onChange={(e) => setAdicionalSelecionado(e.target.value)}
+              >
+                <FormControlLabel value="nenhum" control={<Radio />} label="Sem adicional" />
+                {produto.adicionais.map((a, i) => (
+                  <FormControlLabel
+                    key={i}
+                    value={a.nome}
+                    control={<Radio />}
+                    label={`${a.nome} (+R$ ${a.preco})`}
+                  />
+                ))}
+              </RadioGroup>
+            </Box>
+          )}
+
+          {produto.tiposExtras?.map((tipo, idx) => {
+            if (!Array.isArray(tipo.itens) || tipo.itens.length === 0) return null;
+            const selecionados = tiposExtrasSelecionados[tipo.nome] || [];
+            return (
+              <Box key={idx} sx={{ mt: 3 }}>
+                <Typography fontWeight="bold">
+                  {tipo.nome} {tipo.obrigatorio && "*"}
+                  {tipo.tipoSelecion === "multiplo" && tipo.maximoSelecionados && ` (até ${tipo.maximoSelecionados})`}
+                </Typography>
+
+                {tipo.tipoSelecion === "unico" ? (
+                  <RadioGroup
+                    value={selecionados[0]?.nome || ""}
+                    onChange={(e) => {
+                      const item = tipo.itens.find(i => i.nome === e.target.value);
+                      setTiposExtrasSelecionados(prev => ({ ...prev, [tipo.nome]: item ? [item] : [] }));
+                    }}
+                  >
+                    {!tipo.obrigatorio && <FormControlLabel value="" control={<Radio />} label="Nenhum" />}
+                    {tipo.itens.map((item, i) => (
+                      <FormControlLabel
+                        key={i}
+                        value={item.nome}
+                        control={<Radio />}
+                        label={`${item.nome} (+R$ ${item.preco})`}
+                      />
+                    ))}
+                  </RadioGroup>
+                ) : (
+                  <Box display="flex" flexDirection="column" gap={1}>
+                    {tipo.itens.map((item, i) => {
+                      const isChecked = selecionados.some(s => s.nome === item.nome);
+                      return (
+                        <FormControlLabel
+                          key={i}
+                          control={
+                            <Checkbox
+                              checked={isChecked}
+                              onChange={() => {
+                                const novos = isChecked
+                                  ? selecionados.filter(s => s.nome !== item.nome)
+                                  : [...selecionados, item];
+                                setTiposExtrasSelecionados(prev => ({ ...prev, [tipo.nome]: novos }));
+                              }}
+                              disabled={!isChecked && tipo.maximoSelecionados !== undefined && selecionados.length >= tipo.maximoSelecionados}
+                            />
+                          }
+                          label={`${item.nome} (+R$ ${item.preco})`}
+                        />
+                      );
+                    })}
+                  </Box>
+                )}
+              </Box>
+            );
+          })}
 
           <TextField
             fullWidth
@@ -275,55 +297,25 @@ const handleAddToCart = () => {
 
           <Box display="flex" alignItems="center" gap={2} sx={{ mt: 3 }}>
             <Typography variant="subtitle1">Quantidade:</Typography>
-            <Button variant="outlined" onClick={() => setQuantidade(Math.max(1, quantidade - 1))}>-</Button>
+            <Button onClick={() => setQuantidade(Math.max(1, quantidade - 1))}>-</Button>
             <Typography>{quantidade}</Typography>
-            <Button variant="outlined" onClick={() => setQuantidade(quantidade + 1)}>+</Button>
+            <Button onClick={() => setQuantidade(quantidade + 1)}>+</Button>
           </Box>
         </DialogContent>
 
-        <DialogActions
-          sx={{
-            flexDirection: "column",
-            alignItems: "stretch",
-            px: 3,
-            py: 2,
-            borderTop: "1px solid #eee",
-            backgroundColor: "#fafafa",
-            mt: 2,
-          }}
-        >
+        <DialogActions sx={{ flexDirection: "column", alignItems: "stretch", px: 3, py: 2 }}>
           <Box mb={2} textAlign="center">
-            <Typography variant="subtitle2" color="text.secondary">
-              Total:
-            </Typography>
+            <Typography variant="subtitle2">Total:</Typography>
             <Typography variant="h5" fontWeight="bold" color="primary">
               R$ {precoTotal.toFixed(2)}
             </Typography>
           </Box>
 
           <Box display="flex" gap={2}>
-            <Button
-              fullWidth
-              onClick={onClose}
-              variant="outlined"
-              color="inherit"
-              size="large"
-            >
-              Cancelar
-            </Button>
-            <Button
-              fullWidth
-              variant="contained"
-              color="primary"
-              onClick={handleAddToCart}
-              disabled={!isValid()}
-              size="large"
-            >
-              Adicionar
-            </Button>
+            <Button fullWidth onClick={onClose} variant="outlined" color="inherit">Cancelar</Button>
+            <Button fullWidth variant="contained" color="primary" onClick={handleAddToCart}>Adicionar</Button>
           </Box>
         </DialogActions>
-
       </Dialog>
 
       <Snackbar
