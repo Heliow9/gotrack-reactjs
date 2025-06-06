@@ -12,6 +12,7 @@ import {
   Box,
   Collapse,
   useMediaQuery,
+  Tooltip,
 } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
 import {
@@ -29,95 +30,94 @@ const Sidebar = () => {
   const [mostrarPedidos, setMostrarPedidos] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const location = useLocation();
-
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
 
   useEffect(() => {
     if (location.pathname === "/") {
-      const timer = setTimeout(() => {
-        setMostrarPedidos(true);
-      }, 10000);
+      const timer = setTimeout(() => setMostrarPedidos(true), 10000);
       return () => clearTimeout(timer);
     }
   }, [location.pathname]);
 
+  const primaryColor = "#d90429"; // vermelho da logo
+  const secondaryColor = "#2e2e2e"; // cinza escuro neutro
+  const hoverColor = "#fae3e3"; // hover suave
+  const activeBg = primaryColor;
+  const activeText = "#fff";
+  const white = "#fff";
+
+
+  const menuItems = [
+    { text: "Dashboard", icon: <FaHome />, path: "/" },
+    { text: "Pedidos", icon: <FaClipboardList />, path: "/pedidos" },
+    { text: "Motoristas", icon: <FaMotorcycle />, path: "/motoristas" },
+    { text: "Configurações", icon: <FaCog />, path: "/configuracoes" },
+    { text: "Produtos", icon: <FaListUl />, path: "/produtos" },
+  ];
+
   const drawerContent = (
-    <Box sx={{ padding: 2, backgroundColor: "#ff7b00", height: "100%" }}>
+    <Box sx={{ padding: 2, height: "100%", backgroundColor: white }}>
+      {/* Header */}
       <Box
         display="flex"
         alignItems="center"
         justifyContent="space-between"
         mb={2}
+        px={1}
       >
-        <Typography variant="h6" sx={{ fontWeight: "bold" }} color="white">
-          GoTrack
+        <Typography variant="h6" sx={{ fontWeight: "bold", color: primaryColor }}>
+          Rapigo
         </Typography>
-        <IconButton onClick={() => setMostrarPedidos(!mostrarPedidos)}>
-          {mostrarPedidos ? (
-            <FaBars style={{ color: "#fff" }} />
-          ) : (
-            <FaListUl style={{ color: "#fff" }} />
-          )}
-        </IconButton>
+        <Tooltip title="Alternar pedidos">
+          <IconButton onClick={() => setMostrarPedidos(!mostrarPedidos)}>
+            {mostrarPedidos ? (
+              <FaBars style={{ color: primaryColor }} />
+            ) : (
+              <FaListUl style={{ color: primaryColor }} />
+            )}
+          </IconButton>
+        </Tooltip>
       </Box>
 
-      <Divider sx={{ mb: 2, borderColor: "#fff" }} />
+      <Divider sx={{ mb: 2, borderColor: secondaryColor }} />
 
+      {/* Menu Principal */}
       <Collapse in={!mostrarPedidos}>
         <List>
-          <ListItem button component={Link} to="/">
-            <ListItemIcon>
-              <FaHome style={{ color: "#fff" }} />
-            </ListItemIcon>
-            <ListItemText
-              primary="Dashboard"
-              primaryTypographyProps={{ style: { color: "#fff" } }}
-            />
-          </ListItem>
+          {menuItems.map((item, i) => (
+            <ListItem
+              key={i}
+              button
+              component={Link}
+              to={item.path}
+              sx={{
+                mb: 1,
+                borderRadius: 1,
+                backgroundColor:
+                  location.pathname === item.path ? activeBg : "transparent",
+                color: location.pathname === item.path ? activeText : secondaryColor,
+                "&:hover": {
+                  backgroundColor: hoverColor,
+                  color: primaryColor,
+                },
+              }}
+            >
+              <ListItemIcon sx={{ color: "inherit", minWidth: 36 }}>{item.icon}</ListItemIcon>
+              <ListItemText
+                primary={item.text}
+                primaryTypographyProps={{
+                  fontWeight: 500,
+                  fontSize: "0.95rem",
+                }}
+              />
+            </ListItem>
 
-          <ListItem button component={Link} to="/pedidos">
-            <ListItemIcon>
-              <FaClipboardList style={{ color: "#fff" }} />
-            </ListItemIcon>
-            <ListItemText
-              primary="Pedidos"
-              primaryTypographyProps={{ style: { color: "#fff" } }}
-            />
-          </ListItem>
-
-          <ListItem button component={Link} to="/motoristas">
-            <ListItemIcon>
-              <FaMotorcycle style={{ color: "#fff" }} />
-            </ListItemIcon>
-            <ListItemText
-              primary="Motoristas"
-              primaryTypographyProps={{ style: { color: "#fff" } }}
-            />
-          </ListItem>
-
-          <ListItem button component={Link} to="/configuracoes">
-            <ListItemIcon>
-              <FaCog style={{ color: "#fff" }} />
-            </ListItemIcon>
-            <ListItemText
-              primary="Configurações"
-              primaryTypographyProps={{ style: { color: "#fff" } }}
-            />
-          </ListItem>
-          <ListItem button component={Link} to="/produtos">
-            <ListItemIcon>
-              <FaListUl style={{ color: "#fff" }} />
-            </ListItemIcon>
-            <ListItemText
-              primary="Produtos"
-              primaryTypographyProps={{ style: { color: "#fff" } }}
-            />
-          </ListItem>
-
+          ))}
         </List>
       </Collapse>
 
+      {/* Pedidos em Andamento */}
       <Collapse in={mostrarPedidos}>
         <PedidosEmAndamento />
       </Collapse>
@@ -129,9 +129,14 @@ const Sidebar = () => {
       {isMobile ? (
         <>
           <IconButton
-            color="inherit"
             onClick={() => setMobileOpen(!mobileOpen)}
-            sx={{ position: "absolute", top: 16, left: 16, zIndex: 1300 }}
+            sx={{
+              position: "absolute",
+              top: 16,
+              left: 16,
+              zIndex: 1300,
+              color: primaryColor,
+            }}
           >
             <FaBars />
           </IconButton>
@@ -140,13 +145,11 @@ const Sidebar = () => {
             variant="temporary"
             open={mobileOpen}
             onClose={() => setMobileOpen(false)}
-            ModalProps={{
-              keepMounted: true,
-            }}
+            ModalProps={{ keepMounted: true }}
             sx={{
               [`& .MuiDrawer-paper`]: {
                 width: 260,
-                backgroundColor: "#ff7b00",
+                backgroundColor: white,
               },
             }}
           >
@@ -157,12 +160,13 @@ const Sidebar = () => {
         <Drawer
           variant="permanent"
           sx={{
-            width: 300,
+            width: 280,
             flexShrink: 0,
             [`& .MuiDrawer-paper`]: {
-              width: 300,
+              width: 280,
               boxSizing: "border-box",
-              backgroundColor: "#ff7b00",
+              backgroundColor: white,
+              borderRight: `2px solid ${secondaryColor}`,
             },
           }}
         >

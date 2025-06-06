@@ -1,3 +1,24 @@
+html, body {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  background-color: #d90429 !important;
+}
+body {
+  overflow: hidden;
+}
+
+/* Ocultar scrollbars cross-browser */
+body, html {
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE 10+ */
+}
+
+body::-webkit-scrollbar {
+  display: none; /* Chrome, Safari */
+}
+
+
 .app-container {
   display: flex;
   height: 100vh;

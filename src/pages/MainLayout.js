@@ -18,7 +18,7 @@ const MainLayout = () => {
       <Sidebar />
       <div className="main-content">
         <header className="header" style={headerStyle}>
-          <h1 style={{ margin: 0 }}>GoTrack - Painel de Entregas</h1>
+      
           <Button
             variant="outlined"
             color="error"

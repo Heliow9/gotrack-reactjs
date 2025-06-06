@@ -1,23 +1,21 @@
 import React, { useState, useEffect } from "react";
+import {
+  Container,
+  Box,
+  useMediaQuery,
+  useTheme,
+  Fade,
+  Slide,
+  Snackbar,
+  Paper,
+  IconButton,
+} from "@mui/material";
+import FullscreenExitIcon from "@mui/icons-material/FullscreenExit";
 import { useUI } from "../../src/Context/UIContext";
 import Mapa from "../components/Mapa";
 import ModalPedido from "../components/ModalPedido";
 import PedidosEmAndamento from "../components/PedidosEmAndamento";
-import {
-  Container,
-  Typography,
-  Button,
-  Box,
-  useMediaQuery,
-  useTheme,
-  IconButton,
-  Fade,
-  Slide,
-  Snackbar,
-} from "@mui/material";
-import AddIcon from "@mui/icons-material/Add";
-import FullscreenIcon from "@mui/icons-material/Fullscreen";
-import FullscreenExitIcon from "@mui/icons-material/FullscreenExit";
+
 
 const Dashboard = () => {
   const [modalAberto, setModalAberto] = useState(false);
@@ -27,15 +25,13 @@ const Dashboard = () => {
   const [showToast, setShowToast] = useState(false);
   const [animarSaida, setAnimarSaida] = useState(false);
 
-  // 🧠 Atalhos de teclado
   useEffect(() => {
     const handleKeyDown = (e) => {
       if (e.ctrlKey && e.key.toLowerCase() === "p") {
-        e.preventDefault(); // evita abrir impressão
+        e.preventDefault();
         setModalAberto(true);
       }
     };
-
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
@@ -53,69 +49,85 @@ const Dashboard = () => {
     }, 300);
   };
 
+
+
   return fullscreen ? (
     <Box
       sx={{
         position: "fixed",
-        top: 0,
-        left: 0,
-        width: "100vw",
-        height: "100vh",
+        inset: 0,
         zIndex: 999,
+        bgcolor: "#f5f5f5",
         overflow: "hidden",
-        backgroundColor: "#fff",
       }}
     >
-      <Box position="absolute" top={16} right={16} zIndex={10}>
-        <IconButton
-          onClick={desativarFullscreen}
+      {/* Indicador visual no topo */}
+      <Fade in={!animarSaida} timeout={300}>
+        <Box
+          position="absolute"
+          top={8}
+          left="50%"
+          zIndex={15}
           sx={{
-            backgroundColor: "rgba(255,255,255,0.9)",
-            transition: "all 0.3s ease",
-            "&:hover": {
-              transform: "scale(1.1)",
-              backgroundColor: "rgba(230,230,230,0.9)",
-            },
+            transform: "translateX(-50%)",
+            backgroundColor: "#333",
+            color: "#fff",
+            px: 2,
+            py: 0.5,
+            borderRadius: 1,
+            fontSize: 12,
+            opacity: 0.9,
           }}
         >
-          <FullscreenExitIcon />
-        </IconButton>
-      </Box>
+          Modo Tela Cheia Ativado
+        </Box>
+      </Fade>
 
-      <Box
-        sx={{
-          position: "absolute",
-          top: 0,
-          left: 0,
-          width: "100%",
-          height: "100%",
-          zIndex: 1,
-          transition: "all 0.4s ease-in-out",
-        }}
-      >
+      {/* Botão de sair do fullscreen */}
+      <Fade in={!animarSaida} timeout={300}>
+        <Box position="absolute" top={16} right={16} zIndex={20}>
+          <IconButton
+            onClick={desativarFullscreen}
+            sx={{
+              backgroundColor: "#fff",
+              boxShadow: 2,
+              "&:hover": {
+                transform: "scale(1.1)",
+                backgroundColor: "#f0f0f0",
+              },
+            }}
+          >
+            <FullscreenExitIcon />
+          </IconButton>
+        </Box>
+      </Fade>
+
+      {/* Mapa em fullscreen */}
+      <Box sx={{ position: "absolute", inset: 0 }}>
         <Mapa />
       </Box>
 
+      {/* Painel lateral de pedidos */}
       <Fade in={!animarSaida} timeout={300}>
         <Slide direction="right" in={!animarSaida} timeout={300}>
-          <Box
+          <Paper
+            elevation={3}
             sx={{
               position: "absolute",
               top: 24,
               left: 24,
-              width: "360px",
+              width: { xs: "90vw", sm: "360px" },
               maxHeight: "calc(100% - 48px)",
               overflowY: "auto",
-              zIndex: 5,
-              backgroundColor: "rgba(255,123,0,0.5)",
+              backdropFilter: "blur(8px)",
+              backgroundColor: "rgba(255,255,255,0.8)",
               borderRadius: 2,
-              padding: 2,
-              boxSizing: "border-box",
-              boxShadow: 4,
+              p: 2,
+              zIndex: 10,
             }}
           >
             <PedidosEmAndamento />
-          </Box>
+          </Paper>
         </Slide>
       </Fade>
 
@@ -127,61 +139,19 @@ const Dashboard = () => {
       />
     </Box>
   ) : (
-    <Container maxWidth="xl">
-      <Box
-        display="flex"
-        flexDirection={isMobile ? "column" : "row"}
-        justifyContent="space-between"
-        alignItems={isMobile ? "flex-start" : "center"}
-        mb={3}
-        gap={2}
-      >
-        <Typography variant="h5" fontWeight="bold">
-          Painel de Entregas
-        </Typography>
-
-        <Box display="flex" gap={1}>
-          <Button
-            variant="contained"
-            onClick={() => setModalAberto(true)}
-            startIcon={<AddIcon />}
-            sx={{
-              backgroundColor: "#ff7b00",
-              "&:hover": { backgroundColor: "#e86e00" },
-              boxShadow: 2,
-            }}
-          >
-            Novo Pedido
-          </Button>
-          <IconButton
-            onClick={ativarFullscreen}
-            sx={{
-              backgroundColor: "rgba(0,0,0,0.05)",
-              transition: "all 0.3s ease",
-              "&:hover": {
-                transform: "scale(1.1)",
-                backgroundColor: "rgba(0,0,0,0.1)",
-              },
-            }}
-          >
-            <FullscreenIcon />
-          </IconButton>
-        </Box>
-      </Box>
-
-      <Box
+    <Container maxWidth="xl" sx={{ pt: 0 }}>
+      <Paper
+        elevation={3}
         sx={{
           width: "100%",
           height: isMobile ? "400px" : "600px",
-          borderRadius: 2,
+          borderRadius: 3,
           overflow: "hidden",
-          boxShadow: 2,
-          mb: 3,
-          transition: "all 0.3s ease-in-out",
+          mb: 4,
         }}
       >
         <Mapa />
-      </Box>
+      </Paper>
 
       <ModalPedido isOpen={modalAberto} onClose={() => setModalAberto(false)} />
     </Container>

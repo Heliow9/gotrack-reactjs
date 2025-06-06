@@ -49,6 +49,7 @@ const Checkout = () => {
     return () => clearInterval(interval);
   }, [resumoPedido._id]);
 
+
   useEffect(() => {
     const calcularFreteEndereco = async () => {
       try {
@@ -127,76 +128,85 @@ const Checkout = () => {
     }
   };
 
-const finalizarPedido = async () => {
-  const carrinho = JSON.parse(localStorage.getItem("carrinho")) || [];
-  if (!telefone || !nome || !endereco.rua || carrinho.length === 0) {
-    alert("Preencha todos os dados obrigatórios.");
-    return;
-  }
+  const finalizarPedido = async () => {
+    const carrinho = JSON.parse(localStorage.getItem("carrinho")) || [];
+    if (!telefone || !nome || !endereco.rua || carrinho.length === 0) {
+      alert("Preencha todos os dados obrigatórios.");
+      return;
+    }
 
-  setCarregando(true);
-  try {
-    await axios.post(`${API_URL}/publico/cliente`, {
-      nome,
-      telefone,
-      enderecos: [endereco]
-    });
+    setCarregando(true);
+    try {
+      await axios.post(`${API_URL}/publico/cliente`, {
+        nome,
+        telefone,
+        enderecos: [endereco]
+      });
 
-    const valorProdutos = carrinho.reduce((acc, item) => acc + item.precoTotal, 0);
-    const [lng, lat] = await geocodificarEndereco();
-    const valorFrete = await calcularFrete(lng, lat);
-    const valorTotal = valorProdutos + valorFrete;
+      const valorProdutos = carrinho.reduce((acc, item) => acc + item.precoTotal, 0);
+      const [lng, lat] = await geocodificarEndereco();
+      const valorFrete = await calcularFrete(lng, lat);
+      const valorTotal = valorProdutos + valorFrete;
 
-    setFrete(valorFrete);
+      setFrete(valorFrete);
+      const carrinhoFormatado = carrinho.map(item => ({
+        ...item,
+        amount: Math.round(item.precoTotal * 100),
+        description: item.nome,
+        quantity: item.quantidade
+      }));
 
-    // ✅ Adiciona o frete como item do pedido
-    const carrinhoComFrete = [
-      ...carrinho,
-      {
-        nome: "Frete",
+      const freteItem = {
+        nome: "Entrega",
         quantidade: 1,
         precoUnitario: valorFrete,
-        precoTotal: valorFrete
-      }
-    ];
+        precoTotal: valorFrete,
+        amount: Math.round(valorFrete * 100),
+        description: "Entrega",
+        quantity: 1
+      };
 
-    const response = await axios.post(`${API_URL}/publico/pedido`, {
-      itens: carrinhoComFrete,
-      telefoneCliente: telefone,
-      nomeCliente: nome,
-      enderecoCliente: `${endereco.rua}, ${endereco.numero} - ${endereco.bairro}`,
-      residenciaNumero: endereco.numero,
-      residenciaComplemento: endereco.complemento || '',
-      residenciaReferencia: '',
-      residenciaBairro: endereco.bairro,
-      residenciaCep: endereco.cep,
-      latitudeCliente: lat,
-      longitudeCliente: lng,
-      valorTotal,
-      restaurante: restaurante._id,
-      formadePagamento: "Pix",
-      origem: "vitrine",
-      valorFrete
-    });
+      const carrinhoComFrete = [...carrinhoFormatado, freteItem];
 
-    setResumoPedido({
-      itens: carrinhoComFrete,
-      total: valorTotal,
-      frete: valorFrete,
-      _id: response.data._id
-    });
+      console.log(carrinhoComFrete)
 
-    setQrCodeTexto(response.data.pix_qr_code);
-    setQrCodeUrl(response.data.pix_qr_code_url);
+      const response = await axios.post(`${API_URL}/publico/pedido`, {
+        itens: carrinhoComFrete,
+        telefoneCliente: telefone,
+        nomeCliente: nome,
+        enderecoCliente: `${endereco.rua}, ${endereco.numero} - ${endereco.bairro}`,
+        residenciaNumero: endereco.numero,
+        residenciaComplemento: endereco.complemento || '',
+        residenciaReferencia: '',
+        residenciaBairro: endereco.bairro,
+        residenciaCep: endereco.cep,
+        latitudeCliente: lat,
+        longitudeCliente: lng,
+        valorTotal,
+        restaurante: restaurante._id,
+        formadePagamento: "Pix",
+        origem: "vitrine",
+        valorFrete
+      });
 
-    localStorage.removeItem("carrinho");
-  } catch (err) {
-    alert("Erro ao finalizar pedido.");
-    console.error(err);
-  } finally {
-    setCarregando(false);
-  }
-};
+      setResumoPedido({
+        itens: carrinhoComFrete,
+        total: valorTotal,
+        frete: valorFrete,
+        _id: response.data._id
+      });
+
+      setQrCodeTexto(response.data.pix_qr_code);
+      setQrCodeUrl(response.data.pix_qr_code_url);
+
+      localStorage.removeItem("carrinho");
+    } catch (err) {
+      alert("Erro ao finalizar pedido.");
+      console.error(err);
+    } finally {
+      setCarregando(false);
+    }
+  };
 
 
 
