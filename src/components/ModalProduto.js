@@ -50,10 +50,14 @@ const ModalProduto = ({ open, onClose, produto }) => {
     });
 
     Object.entries(tiposExtrasSelecionados).forEach(([_, itens]) => {
-      itens.forEach(item => {
-        total += parseFloat(item.preco || 0);
-      });
+      if (Array.isArray(itens)) {
+        for (const item of itens) {
+          const preco = typeof item?.preco === "number" ? item.preco : parseFloat(item?.preco || 0);
+          total += preco;
+        }
+      }
     });
+
 
     total *= quantidade;
     setPrecoTotal(Number.isFinite(total) ? total : 0);
@@ -100,6 +104,11 @@ const ModalProduto = ({ open, onClose, produto }) => {
       return;
     }
 
+    const valorBase = produto.precoBase || 0;
+
+    const precoFinalItem = precoTotal;
+    const precoUnitarioBase = valorBase;
+
     const pedido = {
       produtoId: produto._id,
       nome: produto.nome,
@@ -112,9 +121,10 @@ const ModalProduto = ({ open, onClose, produto }) => {
       tiposExtrasSelecionados,
       observacao,
       quantidade,
-      precoUnitario: +(precoTotal / quantidade).toFixed(2),
-      precoTotal
+      precoUnitario: precoUnitarioBase,
+      precoTotal: precoFinalItem
     };
+
 
     const carrinhoAtual = JSON.parse(localStorage.getItem("carrinho")) || [];
     carrinhoAtual.push(pedido);
@@ -131,25 +141,25 @@ const ModalProduto = ({ open, onClose, produto }) => {
 
         <DialogContent>
           <Typography variant="h6" fontWeight="bold" sx={{ mb: 2 }}>
-           {produto.categoriaType === "pizza" && produto.saboresDisponiveis?.length > 1 ? (
-            <Typography variant="subtitle2" fontWeight="normal" color="text.secondary">
-              a partir de R$ {
-                produto.saboresDisponiveis.reduce(
-                  (min, s) => Math.min(min, parseFloat(s.preco || Infinity)),
-                  Infinity
-                ) !== Infinity
-                  ? produto.saboresDisponiveis.reduce(
+            {produto.categoriaType === "pizza" && produto.saboresDisponiveis?.length > 1 ? (
+              <Typography variant="subtitle2" fontWeight="normal" color="text.secondary">
+                a partir de R$ {
+                  produto.saboresDisponiveis.reduce(
+                    (min, s) => Math.min(min, parseFloat(s.preco || Infinity)),
+                    Infinity
+                  ) !== Infinity
+                    ? produto.saboresDisponiveis.reduce(
                       (min, s) => Math.min(min, parseFloat(s.preco || Infinity)),
                       Infinity
                     ).toFixed(2)
-                  : produto.precoBase.toFixed(2)
-              }
-            </Typography>
-          ) : (
-            <Typography variant="subtitle2" fontWeight="normal" color="text.secondary">
-              R$ {produto.precoBase?.toFixed(2)}
-            </Typography>
-          )}
+                    : produto.precoBase.toFixed(2)
+                }
+              </Typography>
+            ) : (
+              <Typography variant="subtitle2" fontWeight="normal" color="text.secondary">
+                R$ {produto.precoBase?.toFixed(2)}
+              </Typography>
+            )}
 
           </Typography>
 

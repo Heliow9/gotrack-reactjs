@@ -143,7 +143,35 @@ const Checkout = () => {
         enderecos: [endereco]
       });
 
-      const valorProdutos = carrinho.reduce((acc, item) => acc + item.precoTotal, 0);
+      const calcularValorItem = (item) => {
+        let total = item.precoUnitario * item.quantidade;
+
+        if (item.bordaSelecionada) {
+          total += parseFloat(item.bordaSelecionada.preco || 0) * item.quantidade;
+        }
+
+        if (item.adicionalSelecionado) {
+          total += parseFloat(item.adicionalSelecionado.preco || 0) * item.quantidade;
+        }
+
+        if (Array.isArray(item.complementosSelecionados)) {
+          item.complementosSelecionados.forEach(c => {
+            total += parseFloat(c.preco || 0) * item.quantidade;
+          });
+        }
+
+        if (item.tiposExtrasSelecionados) {
+          Object.values(item.tiposExtrasSelecionados).forEach(itens => {
+            itens.forEach(extra => {
+              total += parseFloat(extra?.preco || 0) * item.quantidade;
+            });
+          });
+        }
+
+        return total;
+      };
+      const valorProdutos = carrinho.reduce((acc, item) => acc + calcularValorItem(item), 0);
+
       const [lng, lat] = await geocodificarEndereco();
       const valorFrete = await calcularFrete(lng, lat);
       const valorTotal = valorProdutos + valorFrete;
@@ -363,6 +391,17 @@ const Checkout = () => {
                           ))}
                         </Typography>
                       )}
+
+                      {item.tiposExtrasSelecionados &&
+                        Object.entries(item.tiposExtrasSelecionados).map(([tipoNome, itens]) =>
+                          itens
+                            .filter(extra => parseFloat(extra?.preco || 0) > 0)
+                            .map((extra, i) => (
+                              <Typography key={`${tipoNome}-${i}`} variant="body2" sx={{ ml: 2, fontSize: "0.8rem", color: "text.secondary" }}>
+                                {tipoNome}: {extra.nome} (+R$ {parseFloat(extra.preco).toFixed(2)})
+                              </Typography>
+                            ))
+                        )}
 
                       {item.observacao && (
                         <Typography variant="body2" sx={{ ml: 2 }}>

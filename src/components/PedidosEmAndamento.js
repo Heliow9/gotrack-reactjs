@@ -1,419 +1,439 @@
-// Checkout.jsx com cálculo automático de frete, envio de localização e verificação do status de pagamento
-import React, { useState, useEffect } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import {
-  Box, Typography, TextField, Button, Paper, Container, Divider,
-  CircularProgress, AppBar, Toolbar, Avatar, MenuItem, Select,
-  FormControl, InputLabel, Stack, Snackbar, Alert
+  Typography,
+  List,
+  Paper,
+  Box,
+  Divider,
+  Button,
+  Menu,
+  MenuItem,
+  Chip
 } from "@mui/material";
+import { FaMapMarkerAlt, FaPhone, FaMoneyBillWave } from "react-icons/fa";
+import { useMapContext } from "../Context/MapContext";
 import axios from "axios";
-import { useNavigate } from "react-router-dom";
-import * as turf from '@turf/turf';
+import { usePedidos } from "../Context/PedidosContext";
+import { io } from "socket.io-client";
 
-const API_URL = process.env.REACT_APP_API_URL || "http://localhost:10000";
-const MAPBOX_TOKEN = 'pk.eyJ1IjoiaGVsaW93OSIsImEiOiJjbTljNDRnazgwZ3BmMmxwdW9nbWk1c3ZmIn0.NR96Um-T_CqTI3jDb7c2OQ';
+const PedidosEmAndamento = () => {
+  const { setSelectedPosition, setPedidosMap } = useMapContext();
+  const [pedidos, setPedidos] = useState([]);
+  const [isSendingPedido, setIsSendingPedido] = useState({});
+  const [deliverers, setDeliverers] = useState([]);
+  const [anchorEl, setAnchorEl] = useState({});
+  const [selectedDeliverer, setSelectedDeliverer] = useState({});
+  const { atualizarPedidos } = usePedidos();
+  const [selectedPedidos, setSelectedPedidos] = useState([]);
+  const [anchorElMulti, setAnchorElMulti] = useState(null);
+  const pedidosPorEntregador = 3; // Pode vir da API futuramente
+  const socket = useRef(null);
 
-const DEFAULT_IMAGE_URL = "https://cdn-icons-png.flaticon.com/512/1404/1404945.png";
-
-const Checkout = () => {
-  const navigate = useNavigate();
-  const [telefone, setTelefone] = useState("");
-  const [nome, setNome] = useState("");
-  const [enderecosCliente, setEnderecosCliente] = useState([]);
-  const [enderecoSelecionado, setEnderecoSelecionado] = useState(0);
-  const [endereco, setEndereco] = useState({ apelido: "", rua: "", numero: "", bairro: "", cidade: "", estado: "", cep: "", complemento: "" });
-  const [carregando, setCarregando] = useState(false);
-  const [qrCodeUrl, setQrCodeUrl] = useState("");
-  const [qrCodeTexto, setQrCodeTexto] = useState("");
-  const [copiado, setCopiado] = useState(false);
-  const [resumoPedido, setResumoPedido] = useState({ itens: [], total: 0, _id: null });
-  const [frete, setFrete] = useState(0);
-  const [pagamentoGerado, setPagamentoGerado] = useState(false);
-  const [tempoRestante, setTempoRestante] = useState(180); // 3 minutos (180s)
-
-
-
-  const restaurante = JSON.parse(localStorage.getItem("restauranteSelecionado"));
+  const restauranteId = localStorage.getItem("_id");
 
   useEffect(() => {
-    let interval;
-    if (resumoPedido?._id) {
-      interval = setInterval(async () => {
-        try {
-          const { data } = await axios.get(`${API_URL}/api/pedidos/status/${resumoPedido._id}`);
-          if (data.status === "pago") {
-            clearInterval(interval);
-            alert("✅ Pagamento confirmado! Seu pedido está sendo preparado.");
-            navigate(`/meus-pedidos?telefone=${telefone}`);
-          }
-        } catch (err) {
-          console.error("Erro ao verificar status do pagamento:", err);
-        }
-      }, 5000);
-    }
-    return () => clearInterval(interval);
-  }, [resumoPedido._id]);
+    socket.current = io("http://localhost:10000");
+
+    socket.current.on("connect", () => {
+      console.log("✅ [Dashboard] Socket conectado:", socket.current.id);
+      socket.current.emit("joinRestaurante", { restauranteId });
 
 
-  useEffect(() => {
-    const calcularFreteEndereco = async () => {
-      try {
-        if (endereco.rua && endereco.numero && endereco.bairro && endereco.cidade && endereco.estado) {
-          const [lng, lat] = await geocodificarEndereco();
-          const valorFrete = await calcularFrete(lng, lat);
-          setFrete(valorFrete);
-        }
-      } catch (err) {
-        console.error("Erro ao calcular frete automático:", err);
-        setFrete(0);
+
+      // Força atualização após 2 segundos
+      setTimeout(() => {
+        socket.current.emit("joinRestaurante", { restauranteId });
+        console.log("🔁 Reemissão manual de joinRestaurante para garantir entrega");
+      }, 2000);
+
+    });
+
+    socket.current.on("pedidoAceito", (pedidoAtualizado) => {
+      console.log("✅ Pedido aceito recebido no dashboard:", pedidoAtualizado);
+
+      // Atualiza o estado local de pedidos (atualiza só o afetado)
+      setPedidos((prevPedidos) =>
+        prevPedidos.map((p) =>
+          p._id === pedidoAtualizado._id ? pedidoAtualizado : p
+        )
+      );
+    });
+
+    socket.current.on("pedidoRecusado", (pedidoAtualizado) => {
+      console.log("🔄 Pedido recusado recebido no dashboard:", pedidoAtualizado);
+
+      setPedidos((prev) =>
+        prev.map((p) => (p._id === pedidoAtualizado._id ? pedidoAtualizado : p))
+      );
+
+      setIsSendingPedido((prev) => ({
+        ...prev,
+        [pedidoAtualizado._id]: false,
+      }));
+    });
+
+
+
+    socket.current.on("connect_error", (err) => {
+      console.error("❌ Erro na conexão com socket:", err.message);
+    });
+
+    socket.current.on("deliverersOnline", (data) => {
+      console.log("📡 Lista recebida via deliverersOnline:", JSON.stringify(data, null, 2));
+      console.log("📦 Tipo da lista recebida:", typeof data);
+      console.log("📦 É array?", Array.isArray(data));
+      if (Array.isArray(data)) {
+        data.forEach((d, i) =>
+          console.log(`🚚 Entregador ${i}:`, d, "status:", d.status)
+        );
       }
+      console.log("📡 Lista recebida via deliverersOnline:", JSON.stringify(data, null, 2));
+      console.log("📦 Tipo da lista recebida:", typeof data);
+      console.log("📦 É array?", Array.isArray(data));
+      if (Array.isArray(data)) {
+        data.forEach((d, i) =>
+          console.log(`🚚 Entregador ${i}:`, d, "status:", d.status)
+        );
+      }
+
+      const available = Array.isArray(data)
+        ? data.filter((d) => d.status === true)
+        : [];
+
+      setDeliverers(available);
+      console.log("🟢 Entregadores disponíveis:", available);
+    });
+    socket.current.on("novoPedido", (pedidoNovo) => {
+      console.log("🆕 Novo pedido recebido via socket:", pedidoNovo);
+      setPedidos((prevPedidos) => [pedidoNovo, ...prevPedidos]);
+      setPedidosMap((prevPedidos) => [pedidoNovo, ...prevPedidos]);
+    });
+
+
+    return () => {
+      socket.current.disconnect();
+      console.log("🔌 Socket do dashboard desconectado");
     };
 
-    calcularFreteEndereco();
-  }, [endereco]); // <-- roda sempre que endereço mudar
 
 
+
+  }, [restauranteId]);
 
   useEffect(() => {
-    let timer;
-    if (pagamentoGerado && tempoRestante > 0) {
-      timer = setInterval(() => {
-        setTempoRestante((prev) => prev - 1);
-      }, 1000);
-    }
-
-    if (tempoRestante === 0 && resumoPedido?._id) {
-      axios.post(`${API_URL}/api/pedidos/cancelar/${resumoPedido._id}`);
-      alert("⛔ Pagamento não realizado no tempo limite. Pedido cancelado.");
-      setResumoPedido({ itens: [], total: 0, _id: null });
-      setQrCodeUrl("");
-      setQrCodeTexto("");
-      setPagamentoGerado(false);
-    }
-
-    return () => clearInterval(timer);
-  }, [pagamentoGerado, tempoRestante]);
-
-
-  const buscarCliente = async () => {
-    try {
-      const res = await axios.get(`${API_URL}/publico/cliente/${telefone}`);
-      if (res.data) {
-        setNome(res.data.nome);
-        setEnderecosCliente(res.data.enderecos);
-        setEndereco(res.data.enderecos[0]);
-        setEnderecoSelecionado(0);
+    async function handlerGetPedidos() {
+      try {
+        const response = await axios.get(
+          `http://localhost:10000/api/pedidos/${restauranteId}`
+        );
+        console.log("📦 Pedidos recebidos:", response.data);
+        setPedidos(response.data);
+        setPedidosMap(response.data);
+      } catch (error) {
+        console.error("❌ Erro ao buscar pedidos:", error);
       }
-    } catch {
-      setEnderecosCliente([]);
-      console.log("Cliente não encontrado.");
     }
-  };
 
-  const handleEnderecoChange = (index) => {
-    setEnderecoSelecionado(index);
-    setEndereco(enderecosCliente[index]);
-  };
+    handlerGetPedidos();
+  }, [restauranteId, atualizarPedidos]);
 
-  const adicionarEnderecoNovo = () => {
-    setEndereco({ apelido: "", rua: "", numero: "", bairro: "", cidade: "", estado: "", cep: "", complemento: "" });
-    setEnderecoSelecionado(-1);
-  };
+  const enviarParaEntregador = (pedidoId) => {
+    const deliverer = selectedDeliverer[pedidoId];
+    if (deliverer && socket.current) {
+      setIsSendingPedido((prev) => ({ ...prev, [pedidoId]: true }));
 
-  const geocodificarEndereco = async () => {
-    const fullAddress = `${endereco.rua} ${endereco.numero}, ${endereco.bairro}, ${endereco.cidade} - ${endereco.estado}, ${endereco.cep}, Brazil`;
-    const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(fullAddress)}.json?access_token=${MAPBOX_TOKEN}`;
-    const res = await fetch(url);
-    const data = await res.json();
-    if (data?.features?.length > 0) {
-      return data.features[0].center;
-    }
-    throw new Error("Endereço não localizado");
-  };
+      console.log(`📤 Enviando pedido ${pedidoId} para ${deliverer.nome}`);
 
-  const calcularFrete = async (lng, lat) => {
-    try {
-      const res = await axios.get(`${API_URL}/api/frete/dados/${restaurante._id}`);
-      const { tipo, areas, faixasRaio, localizacaoRestaurante } = res.data;
-      const pontoCliente = turf.point([lng, lat]);
+      socket.current.emit("enviarPedido", {
+        pedidoId,
+        delivererId: deliverer._id,
+        restauranteId,
+      });
 
-      if (tipo === "area") {
-        for (const area of areas) {
-          const poligono = turf.polygon(area.coordenadas);
-          if (turf.booleanPointInPolygon(pontoCliente, poligono)) {
-            return area.valor;
-          }
+      setTimeout(() => {
+        if (isSendingPedido[pedidoId]) {
+          axios
+            .put(`https://gotrackapi.onrender.com/api/pedidos/${pedidoId}`, {
+              status: "Pendente",
+            })
+            .then(() => {
+              console.log("⏱️ Pedido retornado para 'Pendente'");
+              setIsSendingPedido((prev) => ({ ...prev, [pedidoId]: false }));
+              atualizarPedidos();
+            })
+            .catch((err) => console.error("❌ Erro ao atualizar pedido:", err));
         }
+      }, 120000);
+    }
+  };
+
+  const handleMenuClick = (event, pedidoId) => {
+    setAnchorEl((prev) => ({ ...prev, [pedidoId]: event.currentTarget }));
+  };
+
+  const handleMenuClose = (pedidoId) => {
+    setAnchorEl((prev) => ({ ...prev, [pedidoId]: null }));
+  };
+
+  const handleDelivererSelect = (pedidoId, deliverer) => {
+    console.log(`✅ Entregador selecionado para ${pedidoId}:`, deliverer);
+    setSelectedDeliverer((prev) => ({ ...prev, [pedidoId]: deliverer }));
+    handleMenuClose(pedidoId);
+    enviarParaEntregador(pedidoId);
+  };
+
+  const togglePedidoSelecionado = (pedidoId) => {
+    setSelectedPedidos((prev) =>
+      prev.includes(pedidoId)
+        ? prev.filter((id) => id !== pedidoId)
+        : [...prev, pedidoId]
+    );
+  };
+
+  const handleAbrirMenuMulti = (event) => {
+    if (selectedPedidos.length === 0) return;
+    setAnchorElMulti(event.currentTarget);
+  };
+
+  const handleFecharMenuMulti = () => {
+    setAnchorElMulti(null);
+  };
+
+  const handleEnviarMultiplos = (deliverer) => {
+    const pedidosAtivosDoEntregador = pedidos.filter(
+      (p) => p.entregador === deliverer._id && p.status !== "entregue"
+    ).length;
+
+    const disponivel = pedidosPorEntregador - pedidosAtivosDoEntregador;
+
+    const pedidosParaEnviar = selectedPedidos.slice(0, disponivel);
+
+    pedidosParaEnviar.forEach((pedidoId) => {
+      setSelectedDeliverer((prev) => ({ ...prev, [pedidoId]: deliverer }));
+      // Chama a função diretamente com o entregador, sem depender do selectedDeliverer
+      if (deliverer && socket.current) {
+        setIsSendingPedido((prev) => ({ ...prev, [pedidoId]: true }));
+
+        console.log(`📤 Enviando pedido ${pedidoId} para ${deliverer.nome} (envio múltiplo)`);
+
+        socket.current.emit("enviarPedido", {
+          pedidoId,
+          delivererId: deliverer._id,
+          restauranteId,
+        });
+
+        setTimeout(() => {
+          axios
+            .put(`https://gotrackapi.onrender.com/api/pedidos/${pedidoId}`, {
+              status: "pendente",
+            })
+            .then(() => {
+              console.log(`⏱️ Pedido ${pedidoId} retornado para 'pendente'`);
+              setIsSendingPedido((prev) => ({ ...prev, [pedidoId]: false }));
+              atualizarPedidos();
+            })
+            .catch((err) => console.error("❌ Erro ao atualizar pedido:", err));
+        }, 120000);
       }
+    });
 
-      const pontoRestaurante = turf.point([localizacaoRestaurante.longitude, localizacaoRestaurante.latitude]);
-      const distanciaKm = turf.distance(pontoRestaurante, pontoCliente);
-      const faixa = faixasRaio.find(f => distanciaKm <= f.ate);
-      return faixa ? faixa.valor : 0;
-    } catch (err) {
-      console.error("Erro ao calcular frete:", err);
-      return 0;
+
+    handleFecharMenuMulti();
+    setSelectedPedidos([]);
+  };
+  const getStatusColor = (status) => {
+    switch (status?.toLowerCase()) {
+      case "aguardando pagamento":
+        return "#d90429";
+      case "em_producao":
+        return "#1976d2";
+      case "em_entrega":
+        return "#fb8c00";
+      case "entregue":
+        return "#2e7d32";
+      default:
+        return "#555";
     }
   };
 
-  const finalizarPedido = async () => {
-    const carrinho = JSON.parse(localStorage.getItem("carrinho")) || [];
-    if (!telefone || !nome || !endereco.rua || carrinho.length === 0) {
-      alert("Preencha todos os dados obrigatórios.");
-      return;
-    }
-
-    setCarregando(true);
-    try {
-      await axios.post(`${API_URL}/publico/cliente`, {
-        nome,
-        telefone,
-        enderecos: [endereco]
-      });
-
-      const valorProdutos = carrinho.reduce((acc, item) => acc + item.precoTotal, 0);
-      const [lng, lat] = await geocodificarEndereco();
-      const valorFrete = await calcularFrete(lng, lat);
-      const valorTotal = valorProdutos + valorFrete;
-
-      setFrete(valorFrete);
-      const carrinhoFormatado = carrinho.map(item => ({
-        ...item,
-        amount: Math.round(item.precoTotal * 100),
-        description: item.nome,
-        quantity: item.quantidade
-      }));
-
-      const freteItem = {
-        nome: "Entrega",
-        quantidade: 1,
-        precoUnitario: valorFrete,
-        precoTotal: valorFrete,
-        amount: Math.round(valorFrete * 100),
-        description: "Entrega",
-        quantity: 1
-      };
-
-      const carrinhoComFrete = [...carrinhoFormatado, freteItem];
-
-      console.log(carrinhoComFrete)
-
-      const response = await axios.post(`${API_URL}/publico/pedido`, {
-        itens: carrinhoComFrete,
-        telefoneCliente: telefone,
-        nomeCliente: nome,
-        enderecoCliente: `${endereco.rua}, ${endereco.numero} - ${endereco.bairro}`,
-        residenciaNumero: endereco.numero,
-        residenciaComplemento: endereco.complemento || '',
-        residenciaReferencia: '',
-        residenciaBairro: endereco.bairro,
-        residenciaCep: endereco.cep,
-        latitudeCliente: lat,
-        longitudeCliente: lng,
-        valorTotal,
-        restaurante: restaurante._id,
-        formadePagamento: "Pix",
-        origem: "vitrine",
-        valorFrete
-      });
-
-      setResumoPedido({
-        itens: carrinhoComFrete,
-        total: valorTotal,
-        frete: valorFrete,
-        _id: response.data._id
-      });
-
-      setQrCodeTexto(response.data.pix_qr_code);
-      setQrCodeUrl(response.data.pix_qr_code_url);
-      setPagamentoGerado(true);
-      setTempoRestante(180); // reinicia o tempo
-      localStorage.removeItem("carrinho");
-    } catch (err) {
-      alert("Erro ao finalizar pedido.");
-      console.error(err);
-    } finally {
-      setCarregando(false);
-    }
-  };
-
-
-
-  const copiarPix = async () => {
-    try {
-      await navigator.clipboard.writeText(qrCodeTexto);
-      setCopiado(true);
-    } catch (err) {
-      console.error("Erro ao copiar código:", err);
-    }
-  };
 
   return (
-    <Box display="flex" flexDirection="column" minHeight="100vh">
-      <AppBar position="sticky" color="success">
-        <Toolbar sx={{ justifyContent: "space-between" }}>
-          <Box display="flex" alignItems="center" gap={2}>
-            <Avatar src={restaurante?.logoUrl || DEFAULT_IMAGE_URL} />
-            <Box>
-              <Typography variant="subtitle1" fontWeight="bold">{restaurante?.nome || "Restaurante"}</Typography>
-              <Typography variant="caption" color="text.secondary">
-                {restaurante?.enderecoRua}, {restaurante?.enderecoNumero} - {restaurante?.enderecoBairro}
-              </Typography>
-            </Box>
-          </Box>
-          <Button color="inherit" onClick={() => navigate("/carrinho")}>Voltar</Button>
-        </Toolbar>
-      </AppBar>
+    <Box
+      sx={{
+        height: "calc(100vh - 100px)",
+        overflowY: "auto",
+        paddingRight: 1,
+        "&::-webkit-scrollbar": { width: 0, height: 0 },
+        "&::-webkit-scrollbar-thumb": { backgroundColor: "transparent" },
+        scrollbarWidth: "none",
+        msOverflowStyle: "none",
+      }}
+    >
+      <Typography
+        variant="h6"
+        fontWeight="bold"
+        gutterBottom
+        sx={{ color: "#fff", mb: 2, ml: 1 }}
+      >
+        Pedidos em Andamento
+      </Typography>
+      {selectedPedidos.length > 0 && (
+        <Button
+          variant="contained"
+          color="secondary"
+          size="small"
+          onClick={handleAbrirMenuMulti}
+          disabled={deliverers.length === 0}
+        >
+          Escolher entregador ({selectedPedidos.length} pedidos)
+        </Button>
+      )}
+      {pedidos.length > 0 ? (
+        <>
+          <List>
+            {pedidos.map((pedido) => (
+              <Paper
+                key={pedido._id}
+                onClick={() => setSelectedPosition(pedido._id)}
+                elevation={2}
+                sx={{
+                  backgroundColor: "#fff",
+                  borderRadius: 3,
+                  padding: 2,
+                  mb: 2,
+                  mx: 1,
+                  boxShadow: "0 2px 6px rgba(0,0,0,0.05)",
+                  transition: "all 0.2s ease-in-out",
+                  "&:hover": {
+                    boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
+                    transform: "translateY(-2px)",
+                  },
+                }}
+              >
 
-      <Container maxWidth="sm" sx={{ py: 3, flex: 1 }}>
-        <Typography variant="h5" fontWeight="bold" gutterBottom>Finalizar Pedido</Typography>
-          
-        <Paper sx={{ p: 3, borderRadius: 2, boxShadow: 3 }}>
-          <TextField label="Telefone" fullWidth margin="normal" value={telefone} onChange={(e) => setTelefone(e.target.value)} onBlur={buscarCliente} />
-          <TextField label="Nome" fullWidth margin="normal" value={nome} onChange={(e) => setNome(e.target.value)} />
-
-          <Divider sx={{ my: 2 }} />
-
-          {enderecosCliente.length > 0 && (
-            <Stack direction="row" spacing={2} alignItems="center">
-              <FormControl fullWidth margin="normal">
-                <InputLabel id="endereco-select-label">Selecionar Endereço</InputLabel>
-                <Select
-                  labelId="endereco-select-label"
-                  value={enderecoSelecionado}
-                  label="Selecionar Endereço"
-                  onChange={(e) => handleEnderecoChange(e.target.value)}
-                >
-                  {enderecosCliente.map((end, index) => (
-                    <MenuItem key={index} value={index}>{end.apelido}</MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-              <Button onClick={adicionarEnderecoNovo} variant="outlined" sx={{ mt: 2, whiteSpace: "nowrap" }}>
-                + Novo Endereço
-              </Button>
-            </Stack>
-          )}
-
-          <Typography variant="subtitle1" fontWeight="bold" gutterBottom>Endereço de Entrega</Typography>
+                <Box display="flex" alignItems="center" gap={1}>
+                  <Typography
+                    variant="subtitle1"
+                    fontWeight="bold"
+                    sx={{ color: "#d90429", fontSize: "1rem" }}
+                  >
+                    {pedido.nomeCliente}
+                  </Typography>
 
 
-
-          <TextField label="Apelido" fullWidth margin="dense" value={endereco.apelido || ""} onChange={(e) => setEndereco({ ...endereco, apelido: e.target.value })} />
-          <TextField label="Rua" fullWidth margin="dense" value={endereco.rua || ""} onChange={(e) => setEndereco({ ...endereco, rua: e.target.value })} />
-          <TextField label="Número" fullWidth margin="dense" value={endereco.numero || ""} onChange={(e) => setEndereco({ ...endereco, numero: e.target.value })} />
-          <TextField label="Complemento" fullWidth margin="dense" value={endereco.complemento || ""} onChange={(e) => setEndereco({ ...endereco, complemento: e.target.value })} />
-          <TextField label="Bairro" fullWidth margin="dense" value={endereco.bairro || ""} onChange={(e) => setEndereco({ ...endereco, bairro: e.target.value })} />
-          <TextField label="Cidade" fullWidth margin="dense" value={endereco.cidade || ""} onChange={(e) => setEndereco({ ...endereco, cidade: e.target.value })} />
-          <TextField label="Estado" fullWidth margin="dense" value={endereco.estado || ""} onChange={(e) => setEndereco({ ...endereco, estado: e.target.value })} />
-          <TextField label="CEP" fullWidth margin="dense" value={endereco.cep || ""} onChange={(e) => setEndereco({ ...endereco, cep: e.target.value })} />
-          {frete > 0 && (
-            <Typography variant="body1" color="success.main" sx={{ mb: 2 }}>
-              Frete estimado: R$ {frete.toFixed(2)}
-            </Typography>
-          )}
-
-          <Box mt={3} display="flex" justifyContent="space-between" alignItems="center">
-            <Button variant="outlined" onClick={() => navigate("/carrinho")}>Voltar</Button>
-            <Button variant="contained" color="primary" onClick={finalizarPedido} disabled={carregando}>
-              {carregando ? <CircularProgress size={24} /> : "Gerar Pagamento"}
-            </Button>
-          </Box>
-
-          {qrCodeUrl && (
-            <Box mt={4} textAlign="center">
-              <Typography variant="h6">Pagamento via Pix</Typography>
-              <img src={qrCodeUrl} alt="QR Code" style={{ width: 256, marginTop: 8 }} />
-              <Typography variant="body2" sx={{
-                mt: 1,
-                wordBreak: "break-all",
-                backgroundColor: "#f5f5f5",
-                p: 1,
-                borderRadius: 1,
-              }}>{qrCodeTexto}</Typography>
-
-              <Button onClick={copiarPix} variant="outlined" size="small" sx={{ mt: 1 }}>
-                Copiar código Pix
-              </Button>
-
-              <Paper elevation={1} sx={{ mt: 3, p: 2, textAlign: "left" }}>
-                <Typography variant="subtitle2" gutterBottom>Resumo do Pedido</Typography>
-                <Typography variant="body2"><strong>Nome:</strong> {nome}</Typography>
-                <Typography variant="body2"><strong>Telefone:</strong> {telefone}</Typography>
-                <Typography variant="body2" sx={{ mt: 1 }}>
-                  <strong>Endereço:</strong><br />
-                  {endereco.rua}, {endereco.numero} - {endereco.bairro}<br />
-                  {endereco.cidade} - {endereco.estado}, {endereco.cep}
-                </Typography>
-
-                <Typography variant="body2" sx={{ mt: 1 }} color="text.secondary">
-                  Tempo médio de entrega: 40–60 min
-                </Typography>
-                <Typography variant="body2" sx={{ mt: 1 }}>
-                  <strong>Frete:</strong> R$ {frete.toFixed(2)}
-                </Typography>
-                <Typography variant="body2" sx={{ mt: 2 }}>
-                  <strong>Total a pagar:</strong> R$ {resumoPedido.total.toFixed(2)}
-                </Typography>
-
-                <Box mt={2}>
-                  <Typography variant="subtitle2">Itens:</Typography>
-                  {resumoPedido.itens.map((item, idx) => (
-                    <Box key={idx} sx={{ mb: 1 }}>
-                      <Typography variant="body2" fontWeight="bold">
-                        • {item.quantidade}x {item.nome} — R$ {item.precoTotal.toFixed(2)}
-                      </Typography>
-
-                      {item.saboresSelecionados?.length > 0 && (
-                        <Typography variant="body2" sx={{ ml: 2 }}>
-                          Sabores: {item.saboresSelecionados.join(" / ")}
-                        </Typography>
-                      )}
-
-                      {item.bordaSelecionada && (
-                        <Typography variant="body2" sx={{ ml: 2 }}>
-                          Borda: {item.bordaSelecionada.nome} (+R$ {item.bordaSelecionada.preco.toFixed(2)})
-                        </Typography>
-                      )}
-
-                      {item.adicionalSelecionado && (
-                        <Typography variant="body2" sx={{ ml: 2 }}>
-                          Adicional: {item.adicionalSelecionado.nome} (+R$ {item.adicionalSelecionado.preco.toFixed(2)})
-                        </Typography>
-                      )}
-
-                      {item.complementosSelecionados?.length > 0 && (
-                        <Typography variant="body2" sx={{ ml: 2 }}>
-                          Complementos:{" "}
-                          {item.complementosSelecionados.map((c, i) => (
-                            <span key={i}>
-                              {c.nome} (+R$ {c.preco.toFixed(2)}){i < item.complementosSelecionados.length - 1 ? ", " : ""}
-                            </span>
-                          ))}
-                        </Typography>
-                      )}
-
-                      {item.observacao && (
-                        <Typography variant="body2" sx={{ ml: 2 }}>
-                          Observações: {item.observacao}
-                        </Typography>
-                      )}
-                    </Box>
+                  {pedido.origem === "ifood" && (
+                    <Chip label="iFood" size="small" color="error" />
+                  )}
+                </Box>
+                <Box display="flex" alignItems="center" mt={1} mb={0.5}>
+                  <FaMapMarkerAlt size={14} style={{ marginRight: 6 }} />
+                  <Typography variant="body2">{pedido.enderecoCliente}</Typography>
+                </Box>
+                <Box display="flex" alignItems="center" mb={0.5}>
+                  <FaPhone size={14} style={{ marginRight: 6 }} />
+                  <Typography variant="body2">{pedido.telefoneCliente}</Typography>
+                </Box>
+                <Divider sx={{ my: 1 }} />
+                <Box mb={1}>
+                  {pedido.itens.map((item, i) => (
+                    <Typography key={i} variant="body2">
+                      {item.quantidade}x {item.nome}
+                    </Typography>
                   ))}
                 </Box>
+                <Box
+                  display="flex"
+                  justifyContent="space-between"
+                  alignItems="center"
+                  mt={1}
+                >
+                  <Box>
+                    <Typography variant="body2" color="textSecondary">
+                      Status:
+                    </Typography>
+                    <Typography
+                      variant="body2"
+                      fontWeight="bold"
+                      sx={{
+                        color: getStatusColor(pedido.status),
+                        textTransform: "capitalize",
+                        mt: "2px",
+                      }}
+                    >
+                      {pedido.status && pedido.status === "aguardando_pagamento" ? 'Aguardando' : pedido.status}
+                    </Typography>
+                  </Box>
 
+                  <Box display="flex" alignItems="center">
+                    <FaMoneyBillWave size={16} style={{ marginRight: 6, color: "#4caf50" }} />
+                    <Typography
+                      variant="body2"
+                      fontWeight="bold"
+                      sx={{ whiteSpace: "nowrap" }}
+                    >
+                      R$ {parseFloat(pedido.valorTotal || 0).toFixed(2)}
+                    </Typography>
+                  </Box>
+                </Box>
+
+                {pedido.status?.toLowerCase() === "pendente" && (
+                  <Box mt={2}>
+                    <Button
+                      variant="contained"
+                      color="primary"
+                      onClick={(e) => handleMenuClick(e, pedido._id)}
+                      disabled={!!isSendingPedido[pedido._id] || deliverers.length === 0}
+                    >
+                      {isSendingPedido[pedido._id]
+                        ? "Enviando..."
+                        : "Escolher Entregador"}
+                    </Button>
+                    <Typography variant="caption" color="gray">
+                      {deliverers.length === 0 && "Nenhum entregador disponível"}
+                    </Typography>
+                  </Box>
+                )}
               </Paper>
-            </Box>
-          )}
-        </Paper>
-      </Container>
+            ))}
+          </List>
 
-      <Snackbar open={copiado} autoHideDuration={2000} onClose={() => setCopiado(false)}>
-        <Alert onClose={() => setCopiado(false)} severity="success" sx={{ width: '100%' }}>
-          Código Pix copiado!
-        </Alert>
-      </Snackbar>
+        </>
+
+      ) : (
+        <Typography variant="body1" color="gray" sx={{ ml: 2 }}>
+          Nenhum pedido em andamento.
+        </Typography>
+      )}
+
+      {/* Menu para seleção de entregador */}
+      {pedidos.map((pedido) => (
+        <Menu
+          anchorEl={anchorElMulti}
+          open={Boolean(anchorElMulti)}
+          onClose={handleFecharMenuMulti}
+        >
+          {deliverers.map((deliverer) => {
+            const pedidosAtivos = pedidos.filter(
+              (p) => p.entregador === deliverer._id && p.status !== "entregue"
+            ).length;
+
+            return (
+              <MenuItem
+                key={deliverer._id}
+                onClick={() => handleEnviarMultiplos(deliverer)}
+                disabled={pedidosAtivos >= pedidosPorEntregador}
+              >
+                <Typography variant="body2">
+                  {deliverer.nome} ({pedidosAtivos}/{pedidosPorEntregador})
+                </Typography>
+              </MenuItem>
+            );
+          })}
+        </Menu>
+
+      ))}
     </Box>
   );
 };
 
-export default Checkout;
+export default PedidosEmAndamento;

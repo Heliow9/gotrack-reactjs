@@ -60,75 +60,75 @@ const Carrinho = () => {
     return itensCarrinho.reduce((total, item) => total + item.precoTotal, 0);
   };
 
-const renderExtras = (item) => {
-  const blocos = [];
+  const renderExtras = (item) => {
+    const blocos = [];
 
-  // Sabores
-  if (item.saboresSelecionados?.length > 0) {
-    blocos.push({
-      titulo: "Sabores",
-      opcoes: item.saboresSelecionados.map((s) => `• ${s}`)
-    });
-  }
+    // Sabores
+    if (item.saboresSelecionados?.length > 0) {
+      blocos.push({
+        titulo: "Sabores",
+        opcoes: item.saboresSelecionados.map((s) => `• ${s}`)
+      });
+    }
 
-  // Borda
-  if (item.bordaSelecionada) {
-    blocos.push({
-      titulo: "Borda",
-      opcoes: [`• ${item.bordaSelecionada.nome} (+R$ ${item.bordaSelecionada.preco.toFixed(2)})`]
-    });
-  }
+    // Borda
+    if (item.bordaSelecionada) {
+      blocos.push({
+        titulo: "Borda",
+        opcoes: [`• ${item.bordaSelecionada.nome} (+R$ ${item.bordaSelecionada.preco.toFixed(2)})`]
+      });
+    }
 
-  // Adicional
-  if (item.adicionalSelecionado) {
-    blocos.push({
-      titulo: "Adicional",
-      opcoes: [`• ${item.adicionalSelecionado.nome} (+R$ ${item.adicionalSelecionado.preco.toFixed(2)})`]
-    });
-  }
+    // Adicional
+    if (item.adicionalSelecionado) {
+      blocos.push({
+        titulo: "Adicional",
+        opcoes: [`• ${item.adicionalSelecionado.nome} (+R$ ${item.adicionalSelecionado.preco.toFixed(2)})`]
+      });
+    }
 
-  // Complementos
-  if (item.complementosSelecionados?.length > 0) {
-    const opcoes = item.complementosSelecionados.map((comp) => 
-      `• ${comp.nome} (+R$ ${comp.preco.toFixed(2)})`
+    // Complementos
+    if (item.complementosSelecionados?.length > 0) {
+      const opcoes = item.complementosSelecionados.map((comp) =>
+        `• ${comp.nome} (+R$ ${comp.preco.toFixed(2)})`
+      );
+      blocos.push({ titulo: "Complementos", opcoes });
+    }
+
+    // tiposExtras agrupados
+    if (item.tiposExtrasSelecionados && typeof item.tiposExtrasSelecionados === "object") {
+      Object.entries(item.tiposExtrasSelecionados).forEach(([tipo, opcoes]) => {
+        if (Array.isArray(opcoes) && opcoes.length > 0) {
+          blocos.push({
+            titulo: tipo,
+            opcoes: opcoes.map((op) =>
+              `• ${op.nome}${op.preco ? ` (+R$ ${op.preco.toFixed(2)})` : ""}`
+            )
+          });
+        }
+      });
+    }
+
+    // Observação
+    if (item.observacao) {
+      blocos.push({ titulo: "Observação", opcoes: [`• ${item.observacao}`] });
+    }
+
+    return (
+      <Box mt={1}>
+        {blocos.map((bloco, idx) => (
+          <Box key={idx} mb={1}>
+            <Typography variant="caption" fontWeight="bold">{bloco.titulo}:</Typography>
+            {bloco.opcoes.map((op, i) => (
+              <Typography key={i} variant="caption" display="block" ml={1}>
+                {op}
+              </Typography>
+            ))}
+          </Box>
+        ))}
+      </Box>
     );
-    blocos.push({ titulo: "Complementos", opcoes });
-  }
-
-  // tiposExtras agrupados
-  if (item.tiposExtrasSelecionados && typeof item.tiposExtrasSelecionados === "object") {
-    Object.entries(item.tiposExtrasSelecionados).forEach(([tipo, opcoes]) => {
-      if (Array.isArray(opcoes) && opcoes.length > 0) {
-        blocos.push({
-          titulo: tipo,
-          opcoes: opcoes.map((op) => 
-            `• ${op.nome}${op.preco ? ` (+R$ ${op.preco.toFixed(2)})` : ""}`
-          )
-        });
-      }
-    });
-  }
-
-  // Observação
-  if (item.observacao) {
-    blocos.push({ titulo: "Observação", opcoes: [`• ${item.observacao}`] });
-  }
-
-  return (
-    <Box mt={1}>
-      {blocos.map((bloco, idx) => (
-        <Box key={idx} mb={1}>
-          <Typography variant="caption" fontWeight="bold">{bloco.titulo}:</Typography>
-          {bloco.opcoes.map((op, i) => (
-            <Typography key={i} variant="caption" display="block" ml={1}>
-              {op}
-            </Typography>
-          ))}
-        </Box>
-      ))}
-    </Box>
-  );
-};
+  };
 
 
 
@@ -186,8 +186,26 @@ const renderExtras = (item) => {
                       Quantidade: {item.quantidade}
                     </Typography>
                     <Typography variant="body2" color="text.secondary">
-                      Total: R$ {item.precoTotal.toFixed(2)}
+                      1x {item.nome} R$ {item.precoUnitario.toFixed(2)}
                     </Typography>
+
+                    {item.tiposExtrasSelecionados &&
+                      Object.entries(item.tiposExtrasSelecionados).map(([tipo, opcoes]) => (
+                        opcoes.map((op, idx) => (
+                          op.preco > 0 && (
+                            <Typography key={`${tipo}-${idx}`} variant="body2" color="text.secondary" ml={2}>
+                              • {tipo}: {op.nome} (+R$ {op.preco.toFixed(2)})
+                            </Typography>
+                          )
+                        ))
+                      ))
+                    }
+
+                    <Typography variant="body2" fontWeight="bold" mt={1}>
+                      Total do item: R$ {(item.precoTotal).toFixed(2)}
+                    </Typography>
+
+
                     {renderExtras(item)}
                     <Box display="flex" gap={1} mt={1}>
                       <Button size="small" variant="outlined" onClick={() => alterarQuantidade(idx, -1)}>-</Button>
