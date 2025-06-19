@@ -41,7 +41,7 @@ const Produtos = () => {
   const restauranteId = localStorage.getItem("_id");
 
   const fetchProdutos = async () => {
-    const res = await axios.get(`https://gotrackapi.onrender.com/api/produtos/${restauranteId}`);
+    const res = await axios.get(`http://localhost:10000/api/produtos/${restauranteId}`);
     setProdutos(res.data);
   };
 

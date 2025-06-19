@@ -51,7 +51,7 @@ const Configuracoes = () => {
     async function fetchConfig() {
       try {
         const token = localStorage.getItem("token");
-        const response = await axios.get("https://gotrackapi.onrender.com/api/restaurantes/me", {
+        const response = await axios.get("http://localhost:10000/api/restaurantes/me", {
           headers: { Authorization: token },
         });
         if (response.data) {
@@ -163,7 +163,7 @@ const Configuracoes = () => {
       };
 
       await axios.put(
-        "https://gotrackapi.onrender.com/api/restaurantes/configuracoes",
+        "http://localhost:10000/api/restaurantes/configuracoes",
         payload,
         { headers: { Authorization: token } }
       );

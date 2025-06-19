@@ -17,7 +17,7 @@ import {
 import DeleteIcon from "@mui/icons-material/Delete";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import { useNavigate } from "react-router-dom";
-
+import { Helmet } from "react-helmet";
 const Carrinho = () => {
   const [itensCarrinho, setItensCarrinho] = useState([]);
   const [restaurante, setRestaurante] = useState(null);
@@ -55,6 +55,30 @@ const Carrinho = () => {
       atualizarCarrinho(novosItens);
     }
   };
+
+  const estaAbertoAgora = () => {
+    if (!restaurante?.horariosFuncionamento) return false;
+
+    const diasSemana = ["domingo", "segunda", "terca", "quarta", "quinta", "sexta", "sabado"];
+    const hoje = diasSemana[new Date().getDay()];
+    const horario = restaurante.horariosFuncionamento[hoje];
+
+    if (!horario || horario.fechado || !horario.abre || !horario.fecha) return false;
+
+    const agora = new Date();
+    const [hAbre, mAbre] = horario.abre.split(":").map(Number);
+    const [hFecha, mFecha] = horario.fecha.split(":").map(Number);
+
+    const horarioAbre = new Date(agora);
+    horarioAbre.setHours(hAbre, mAbre, 0);
+
+    const horarioFecha = new Date(agora);
+    horarioFecha.setHours(hFecha, mFecha, 0);
+
+    return agora >= horarioAbre && agora <= horarioFecha;
+  };
+
+
 
   const calcularTotal = () => {
     return itensCarrinho.reduce((total, item) => total + item.precoTotal, 0);
@@ -134,6 +158,11 @@ const Carrinho = () => {
 
   return (
     <Box display="flex" flexDirection="column" height="100vh">
+      <Helmet>
+        {
+          restaurante ? <title>{restaurante.nome} - Carrinho</title> : null
+        }
+      </Helmet>
       <AppBar position="sticky" color="success" elevation={1}>
         <Toolbar sx={{ display: "flex", justifyContent: "space-between" }}>
           <Button color="inherit" startIcon={<ArrowBackIcon />} onClick={() => navigate("/pedido")}>Voltar</Button>
@@ -150,9 +179,10 @@ const Carrinho = () => {
                 <Typography variant="caption" color="text.secondary">
                   {restaurante.enderecoRua}, {restaurante.enderecoNumero} - {restaurante.enderecoBairro}
                 </Typography>
-                <Typography variant="caption" color="text.secondary">
-                  {restaurante.horarioInicio}:00 às {restaurante.horarioFim}:00
+                <Typography variant="caption" color={estaAbertoAgora() ? "lightgreen" : "error"}>
+                  {estaAbertoAgora() ? "Aberto agora" : "Fechado agora"}
                 </Typography>
+
               </Box>
             </Box>
           )}

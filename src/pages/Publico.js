@@ -17,6 +17,7 @@ import {
   Divider,
   IconButton
 } from "@mui/material";
+import { Helmet } from "react-helmet";
 import HomeIcon from "@mui/icons-material/Home";
 import Badge from "@mui/material/Badge";
 import ShoppingCartIcon from "@mui/icons-material/ShoppingCart";
@@ -44,6 +45,8 @@ const Publico = () => {
   const [quantidadeCarrinho, setQuantidadeCarrinho] = useState(0);
   const [statusLoja, setStatusLoja] = useState("Carregando...");
   const [corStatus, setCorStatus] = useState("default");
+
+
 
   const scrollRef = useRef(null);
 
@@ -173,7 +176,13 @@ const Publico = () => {
 
 
   return (
+
     <Box sx={{ pb: 10, backgroundColor: "#f7f7f7", minHeight: '100vh' }}>
+      <Helmet>
+        {
+          restaurante ? <title>{restaurante.nome} - Pedido</title> : null
+        }
+      </Helmet>
       <AppBar position="sticky" color="success" sx={{ zIndex: 1201 }}>
         <Toolbar sx={{ px: 2, flexDirection: "row", justifyContent: "space-between", flexWrap: "wrap", gap: 1 }}>
           <Box display="flex" alignItems="center" gap={1} sx={{ flex: 1, minWidth: 0 }}>

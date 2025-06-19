@@ -3,11 +3,17 @@ import React, { useState, useEffect } from "react";
 import {
   Box, Typography, TextField, Button, Paper, Container, Divider,
   CircularProgress, AppBar, Toolbar, Avatar, MenuItem, Select,
-  FormControl, InputLabel, Stack, Snackbar, Alert
+  FormControl, InputLabel, Stack, Snackbar, Alert, Grid
 } from "@mui/material";
 import axios from "axios";
 import { useNavigate } from "react-router-dom";
 import * as turf from '@turf/turf';
+import { Helmet } from "react-helmet";
+import Radio from '@mui/material/Radio';
+import RadioGroup from '@mui/material/RadioGroup';
+import FormControlLabel from '@mui/material/FormControlLabel';
+import CreditCardIcon from '@mui/icons-material/CreditCard';
+import PixIcon from '@mui/icons-material/Pix'; // ícone nativo do MUI
 
 const API_URL = process.env.REACT_APP_API_URL || "http://localhost:10000";
 const MAPBOX_TOKEN = 'pk.eyJ1IjoiaGVsaW93OSIsImEiOiJjbTljNDRnazgwZ3BmMmxwdW9nbWk1c3ZmIn0.NR96Um-T_CqTI3jDb7c2OQ';
@@ -27,6 +33,13 @@ const Checkout = () => {
   const [copiado, setCopiado] = useState(false);
   const [resumoPedido, setResumoPedido] = useState({ itens: [], total: 0, _id: null });
   const [frete, setFrete] = useState(0);
+  const [formaPagamento, setFormaPagamento] = useState("Pix");
+  const [nomeCartao, setNomeCartao] = useState("");
+  const [numeroCartao, setNumeroCartao] = useState("");
+  const [validadeCartao, setValidadeCartao] = useState("");
+  const [cvvCartao, setCvvCartao] = useState("");
+  const [cpfTitular, setCpfTitular] = useState("");
+
 
   const restaurante = JSON.parse(localStorage.getItem("restauranteSelecionado"));
 
@@ -82,15 +95,48 @@ const Checkout = () => {
     }
   };
 
+
+
   const handleEnderecoChange = (index) => {
     setEnderecoSelecionado(index);
     setEndereco(enderecosCliente[index]);
+    setFrete(0); // Zera o frete ao trocar
   };
 
   const adicionarEnderecoNovo = () => {
-    setEndereco({ apelido: "", rua: "", numero: "", bairro: "", cidade: "", estado: "", cep: "", complemento: "" });
+    setEndereco({
+      apelido: "",
+      rua: "",
+      numero: "",
+      bairro: "",
+      cidade: "",
+      estado: "",
+      cep: "",
+      complemento: ""
+    });
     setEnderecoSelecionado(-1);
+    setFrete(0); // Zera também ao criar novo
   };
+
+  const buscarEnderecoPorCep = async (cep) => {
+    try {
+      const res = await fetch(`https://viacep.com.br/ws/${cep}/json/`);
+      const data = await res.json();
+      if (data.erro) throw new Error("CEP não encontrado");
+      return {
+        rua: data.logradouro,
+        bairro: data.bairro,
+        cidade: data.localidade,
+        estado: data.uf,
+      };
+    } catch (err) {
+      console.error("Erro ao buscar endereço por CEP:", err);
+      return null;
+    }
+  };
+
+
+
 
   const geocodificarEndereco = async () => {
     const fullAddress = `${endereco.rua} ${endereco.numero}, ${endereco.bairro}, ${endereco.cidade} - ${endereco.estado}, ${endereco.cep}, Brazil`;
@@ -175,7 +221,6 @@ const Checkout = () => {
       const [lng, lat] = await geocodificarEndereco();
       const valorFrete = await calcularFrete(lng, lat);
       const valorTotal = valorProdutos + valorFrete;
-
       setFrete(valorFrete);
       const carrinhoFormatado = carrinho.map(item => ({
         ...item,
@@ -196,7 +241,7 @@ const Checkout = () => {
 
       const carrinhoComFrete = [...carrinhoFormatado, freteItem];
 
-      console.log(carrinhoComFrete)
+      console.log("ID do restaurante:", restaurante?._id);
 
       const response = await axios.post(`${API_URL}/publico/pedido`, {
         itens: carrinhoComFrete,
@@ -212,7 +257,7 @@ const Checkout = () => {
         longitudeCliente: lng,
         valorTotal,
         restaurante: restaurante._id,
-        formadePagamento: "Pix",
+        formadePagamento: formaPagamento,
         origem: "vitrine",
         valorFrete
       });
@@ -223,18 +268,36 @@ const Checkout = () => {
         frete: valorFrete,
         _id: response.data._id
       });
-
       setQrCodeTexto(response.data.pix_qr_code);
       setQrCodeUrl(response.data.pix_qr_code_url);
 
       localStorage.removeItem("carrinho");
     } catch (err) {
       alert("Erro ao finalizar pedido.");
-      console.error(err);
-    } finally {
+      console.error("Erro backend:", err?.response?.data || err);
+    }
+    finally {
       setCarregando(false);
     }
   };
+
+
+  useEffect(() => {
+    const calcularFreteEndereco = async () => {
+      try {
+        if (endereco.rua && endereco.numero && endereco.bairro && endereco.cidade && endereco.estado) {
+          const [lng, lat] = await geocodificarEndereco();
+          const valorFrete = await calcularFrete(lng, lat);
+          setFrete(valorFrete);
+        }
+      } catch (err) {
+        console.error("Erro ao calcular frete automático:", err);
+        setFrete(0);
+      }
+    };
+
+    calcularFreteEndereco();
+  }, [endereco]);
 
 
 
@@ -249,6 +312,11 @@ const Checkout = () => {
 
   return (
     <Box display="flex" flexDirection="column" minHeight="100vh">
+      <Helmet>
+        {
+          restaurante ? <title>{restaurante.nome} - Carrinho</title> : null
+        }
+      </Helmet>
       <AppBar position="sticky" color="success">
         <Toolbar sx={{ justifyContent: "space-between" }}>
           <Box display="flex" alignItems="center" gap={2}>
@@ -299,27 +367,52 @@ const Checkout = () => {
 
 
           <TextField label="Apelido" fullWidth margin="dense" value={endereco.apelido || ""} onChange={(e) => setEndereco({ ...endereco, apelido: e.target.value })} />
+          <TextField
+            label="CEP"
+            fullWidth
+            margin="dense"
+            value={endereco.cep || ""}
+            onChange={async (e) => {
+              const novoCep = e.target.value;
+              setEndereco({ ...endereco, cep: novoCep });
+
+              if (novoCep.length === 8) {
+                const resultado = await buscarEnderecoPorCep(novoCep);
+                if (resultado) {
+                  const enderecoAtualizado = {
+                    ...endereco,
+                    ...resultado,
+                    cep: novoCep
+                  };
+                  setEndereco(enderecoAtualizado);
+
+                  // Só geocodifica se tiver número preenchido também
+                  if (endereco.numero) {
+                    const [lng, lat] = await geocodificarEndereco();
+                    const novoFrete = await calcularFrete(lng, lat);
+                    setFrete(novoFrete);
+                  }
+                }
+              }
+            }}
+          />
+
           <TextField label="Rua" fullWidth margin="dense" value={endereco.rua || ""} onChange={(e) => setEndereco({ ...endereco, rua: e.target.value })} />
           <TextField label="Número" fullWidth margin="dense" value={endereco.numero || ""} onChange={(e) => setEndereco({ ...endereco, numero: e.target.value })} />
           <TextField label="Complemento" fullWidth margin="dense" value={endereco.complemento || ""} onChange={(e) => setEndereco({ ...endereco, complemento: e.target.value })} />
           <TextField label="Bairro" fullWidth margin="dense" value={endereco.bairro || ""} onChange={(e) => setEndereco({ ...endereco, bairro: e.target.value })} />
           <TextField label="Cidade" fullWidth margin="dense" value={endereco.cidade || ""} onChange={(e) => setEndereco({ ...endereco, cidade: e.target.value })} />
           <TextField label="Estado" fullWidth margin="dense" value={endereco.estado || ""} onChange={(e) => setEndereco({ ...endereco, estado: e.target.value })} />
-          <TextField label="CEP" fullWidth margin="dense" value={endereco.cep || ""} onChange={(e) => setEndereco({ ...endereco, cep: e.target.value })} />
+
           {frete > 0 && (
             <Typography variant="body1" color="success.main" sx={{ mb: 2 }}>
               Frete estimado: R$ {frete.toFixed(2)}
             </Typography>
           )}
 
-          <Box mt={3} display="flex" justifyContent="space-between" alignItems="center">
-            <Button variant="outlined" onClick={() => navigate("/carrinho")}>Voltar</Button>
-            <Button variant="contained" color="primary" onClick={finalizarPedido} disabled={carregando}>
-              {carregando ? <CircularProgress size={24} /> : "Gerar Pagamento"}
-            </Button>
-          </Box>
 
-          {qrCodeUrl && (
+
+          {qrCodeUrl && formaPagamento === "Pix" && (
             <Box mt={4} textAlign="center">
               <Typography variant="h6">Pagamento via Pix</Typography>
               <img src={qrCodeUrl} alt="QR Code" style={{ width: 256, marginTop: 8 }} />
@@ -415,6 +508,62 @@ const Checkout = () => {
               </Paper>
             </Box>
           )}
+{!resumoPedido._id && (
+  <Box mt={4}>
+    <Grid container spacing={2} alignItems="center" justifyContent="space-between">
+
+      <Grid item xs={12} md={6}>
+        <Typography variant="subtitle1" fontWeight="bold" gutterBottom>
+          Forma de Pagamento
+        </Typography>
+
+        <RadioGroup
+          value={formaPagamento}
+          onChange={(e) => setFormaPagamento(e.target.value)}
+        >
+          <FormControlLabel
+            value="Pix"
+            control={<Radio />}
+            label={
+              <Box display="flex" alignItems="center" gap={1}>
+                <PixIcon color={formaPagamento === "Pix" ? "primary" : "action"} />
+                <Typography>Pix</Typography>
+              </Box>
+            }
+          />
+          <FormControlLabel
+            value="CartaoCredito"
+            control={<Radio />}
+            label={
+              <Box display="flex" alignItems="center" gap={1}>
+                <CreditCardIcon color={formaPagamento === "CartaoCredito" ? "primary" : "action"} />
+                <Typography>Cartão de Crédito</Typography>
+              </Box>
+            }
+          />
+        </RadioGroup>
+      </Grid>
+
+      <Grid item xs={12} md={6}>
+        <Box display="flex" justifyContent="flex-end" gap={2} mt={{ xs: 2, md: 4 }}>
+          <Button variant="outlined" onClick={() => navigate("/carrinho")}>
+            Voltar
+          </Button>
+          <Button
+            variant="contained"
+            color="primary"
+            onClick={finalizarPedido}
+            disabled={carregando}
+          >
+            {carregando ? <CircularProgress size={24} /> : "Gerar Pagamento"}
+          </Button>
+        </Box>
+      </Grid>
+
+    </Grid>
+  </Box>
+)}
+
         </Paper>
       </Container>
 

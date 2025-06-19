@@ -59,7 +59,7 @@ const Motoristas = () => {
     const restauranteId = localStorage.getItem("_id");
     const token = localStorage.getItem("token");
 
-    fetch(`https://gotrackapi.onrender.com/byRestaurante/${restauranteId}`, {
+    fetch(`http://localhost:10000/entregadores/byRestaurante/${restauranteId}`, {
       headers: { Authorization: token },
     })
       .then((res) => res.json())
@@ -87,7 +87,7 @@ const Motoristas = () => {
     };
 
     try {
-      await axios.post("https://gotrackapi.onrender.com/register", body, {
+      await axios.post("http://localhost:10000/entregadores/register", body, {
         headers: {
           "Content-Type": "application/json",
           Authorization: token,
@@ -108,7 +108,7 @@ const Motoristas = () => {
     const token = localStorage.getItem("token");
 
     try {
-      await axios.delete(`https://gotrackapi.onrender.com/entregadordelete/${id}`, {
+      await axios.delete(`http://localhost:10000/entregadordelete/${id}`, {
         headers: { Authorization: token },
       });
 
@@ -125,7 +125,7 @@ const Motoristas = () => {
 
     try {
       await axios.put(
-        `https://gotrackapi.onrender.com/entregadores/${motoristaSelecionado._id}/senha`,
+        `http://localhost:10000/entregadores/${motoristaSelecionado._id}/senha`,
         { novaSenha },
         { headers: { Authorization: token } }
       );

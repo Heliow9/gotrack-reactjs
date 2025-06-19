@@ -10,6 +10,7 @@ import {
   MenuItem,
   Chip
 } from "@mui/material";
+import { Checkbox } from "@mui/material"; // Adicione esse import
 import { FaMapMarkerAlt, FaPhone, FaMoneyBillWave } from "react-icons/fa";
 import { useMapContext } from "../Context/MapContext";
 import axios from "axios";
@@ -151,19 +152,22 @@ const PedidosEmAndamento = () => {
       });
 
       setTimeout(() => {
-        if (isSendingPedido[pedidoId]) {
-          axios
-            .put(`https://gotrackapi.onrender.com/api/pedidos/${pedidoId}`, {
-              status: "Pendente",
-            })
-            .then(() => {
-              console.log("⏱️ Pedido retornado para 'Pendente'");
-              setIsSendingPedido((prev) => ({ ...prev, [pedidoId]: false }));
-              atualizarPedidos();
-            })
-            .catch((err) => console.error("❌ Erro ao atualizar pedido:", err));
-        }
+        // Consulta diretamente o DOM ou busca no backend se ainda está pendente
+        axios.get(`http://localhost:10000/api/pedidos/${pedidoId}`)
+          .then(res => {
+            if (res.data.status === "aguardando_resposta") {
+              return axios.put(`http://localhost:10000/api/pedidos/${pedidoId}`, {
+                status: "em_entrega",
+              });
+            }
+          })
+          .then(() => {
+            setIsSendingPedido((prev) => ({ ...prev, [pedidoId]: false }));
+            atualizarPedidos();
+          })
+          .catch((err) => console.error("❌ Erro ao reverter pedido:", err));
       }, 120000);
+
     }
   };
 
@@ -224,11 +228,11 @@ const PedidosEmAndamento = () => {
 
         setTimeout(() => {
           axios
-            .put(`https://gotrackapi.onrender.com/api/pedidos/${pedidoId}`, {
-              status: "pendente",
+            .put(`https://localhost:10000/api/pedidos/${pedidoId}`, {
+              status: "em_entrega",
             })
             .then(() => {
-              console.log(`⏱️ Pedido ${pedidoId} retornado para 'pendente'`);
+              console.log(`⏱️ Pedido ${pedidoId} retornado para 'em_entrega'`);
               setIsSendingPedido((prev) => ({ ...prev, [pedidoId]: false }));
               atualizarPedidos();
             })
@@ -291,111 +295,138 @@ const PedidosEmAndamento = () => {
       {pedidos.length > 0 ? (
         <>
           <List>
-            {pedidos.map((pedido) => (
-              <Paper
-                key={pedido._id}
-                onClick={() => setSelectedPosition(pedido._id)}
-                elevation={2}
-                sx={{
-                  backgroundColor: "#fff",
-                  borderRadius: 3,
-                  padding: 2,
-                  mb: 2,
-                  mx: 1,
-                  boxShadow: "0 2px 6px rgba(0,0,0,0.05)",
-                  transition: "all 0.2s ease-in-out",
-                  "&:hover": {
-                    boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
-                    transform: "translateY(-2px)",
-                  },
-                }}
-              >
+            {pedidos
+              .filter((pedido) =>
+                pedido.status === "em_entrega" || pedido.status === "aguardando_resposta" || pedido.status === 'em_rota'
+              )
+              .sort((a, b) => new Date(a.criadoEm) - new Date(b.criadoEm)) // ← ordena mais antigos primeiro
+              .map((pedido) => (
 
-                <Box display="flex" alignItems="center" gap={1}>
-                  <Typography
-                    variant="subtitle1"
-                    fontWeight="bold"
-                    sx={{ color: "#d90429", fontSize: "1rem" }}
-                  >
-                    {pedido.nomeCliente}
-                  </Typography>
-
-
-                  {pedido.origem === "ifood" && (
-                    <Chip label="iFood" size="small" color="error" />
-                  )}
-                </Box>
-                <Box display="flex" alignItems="center" mt={1} mb={0.5}>
-                  <FaMapMarkerAlt size={14} style={{ marginRight: 6 }} />
-                  <Typography variant="body2">{pedido.enderecoCliente}</Typography>
-                </Box>
-                <Box display="flex" alignItems="center" mb={0.5}>
-                  <FaPhone size={14} style={{ marginRight: 6 }} />
-                  <Typography variant="body2">{pedido.telefoneCliente}</Typography>
-                </Box>
-                <Divider sx={{ my: 1 }} />
-                <Box mb={1}>
-                  {pedido.itens.map((item, i) => (
-                    <Typography key={i} variant="body2">
-                      {item.quantidade}x {item.nome}
-                    </Typography>
-                  ))}
-                </Box>
-                <Box
-                  display="flex"
-                  justifyContent="space-between"
-                  alignItems="center"
-                  mt={1}
+                <Paper
+                  key={pedido._id}
+                  elevation={2}
+                  sx={{
+                    backgroundColor: "#fff",
+                    borderRadius: 3,
+                    padding: 2,
+                    mb: 2,
+                    mx: 1,
+                    boxShadow: "0 2px 6px rgba(0,0,0,0.05)",
+                    transition: "all 0.2s ease-in-out",
+                    "&:hover": {
+                      boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
+                      transform: "translateY(-2px)",
+                    },
+                  }}
                 >
-                  <Box>
-                    <Typography variant="body2" color="textSecondary">
-                      Status:
-                    </Typography>
-                    <Typography
-                      variant="body2"
-                      fontWeight="bold"
-                      sx={{
-                        color: getStatusColor(pedido.status),
-                        textTransform: "capitalize",
-                        mt: "2px",
-                      }}
-                    >
-                      {pedido.status && pedido.status === "aguardando_pagamento" ? 'Aguardando' : pedido.status}
-                    </Typography>
+                  {/* ✅ Checkbox e nome do cliente */}
+                  <Box display="flex" justifyContent="space-between" alignItems="center">
+                    <Box display="flex" alignItems="center" gap={1}>
+                      <Checkbox
+                        size="small"
+                        checked={selectedPedidos.includes(pedido._id)}
+                        onChange={() => togglePedidoSelecionado(pedido._id)}
+                        disabled={
+                          pedido.status === "aguardando_resposta" ||
+                          isSendingPedido[pedido._id] === true
+                        }
+                      />
+
+                      <Typography
+                        variant="subtitle1"
+                        fontWeight="bold"
+                        sx={{ color: "#d90429", fontSize: "1rem" }}
+                      >
+                        {pedido.nomeCliente}
+                      </Typography>
+
+                      {pedido.origem === "ifood" && (
+                        <Chip label="iFood" size="small" color="error" />
+                      )}
+                    </Box>
                   </Box>
 
-                  <Box display="flex" alignItems="center">
-                    <FaMoneyBillWave size={16} style={{ marginRight: 6, color: "#4caf50" }} />
-                    <Typography
-                      variant="body2"
-                      fontWeight="bold"
-                      sx={{ whiteSpace: "nowrap" }}
-                    >
-                      R$ {parseFloat(pedido.valorTotal || 0).toFixed(2)}
-                    </Typography>
+                  <Box display="flex" alignItems="center" mt={1} mb={0.5}>
+                    <FaMapMarkerAlt size={14} style={{ marginRight: 6 }} />
+                    <Typography variant="body2">{pedido.enderecoCliente}</Typography>
                   </Box>
-                </Box>
 
-                {pedido.status?.toLowerCase() === "pendente" && (
-                  <Box mt={2}>
-                    <Button
-                      variant="contained"
-                      color="primary"
-                      onClick={(e) => handleMenuClick(e, pedido._id)}
-                      disabled={!!isSendingPedido[pedido._id] || deliverers.length === 0}
-                    >
-                      {isSendingPedido[pedido._id]
-                        ? "Enviando..."
-                        : "Escolher Entregador"}
-                    </Button>
-                    <Typography variant="caption" color="gray">
-                      {deliverers.length === 0 && "Nenhum entregador disponível"}
-                    </Typography>
+                  <Box display="flex" alignItems="center" mb={0.5}>
+                    <FaPhone size={14} style={{ marginRight: 6 }} />
+                    <Typography variant="body2">{pedido.telefoneCliente}</Typography>
                   </Box>
-                )}
-              </Paper>
-            ))}
+
+                  <Divider sx={{ my: 1 }} />
+
+                  <Box mb={1}>
+                    {pedido.itens.map((item, i) => (
+                      <Typography key={i} variant="body2">
+                        {item.quantidade}x {item.nome}
+                      </Typography>
+                    ))}
+                  </Box>
+
+                  <Box display="flex" justifyContent="space-between" alignItems="center" mt={1}>
+                    <Box>
+                      <Typography variant="body2" color="textSecondary">
+                        Status:
+                      </Typography>
+                      <Typography
+                        variant="body2"
+                        fontWeight="bold"
+                        sx={{
+                          color: getStatusColor(pedido.status),
+                          textTransform: "capitalize",
+                          mt: "2px",
+                        }}
+                      >
+                        {pedido.status === "aguardando_pagamento" ? 'Aguardando' : pedido.status}
+                      </Typography>
+                    </Box>
+
+                    <Box display="flex" alignItems="center">
+                      <FaMoneyBillWave size={16} style={{ marginRight: 6, color: "#4caf50" }} />
+                      <Typography
+                        variant="body2"
+                        fontWeight="bold"
+                        sx={{ whiteSpace: "nowrap" }}
+                      >
+                        R$ {parseFloat(pedido.valorTotal || 0).toFixed(2)}
+                      </Typography>
+                    </Box>
+                  </Box>
+
+                  {anchorEl[pedido._id] && (
+                    <Menu
+                      anchorEl={anchorEl[pedido._id]}
+                      open={Boolean(anchorEl[pedido._id])}
+                      onClose={() => handleMenuClose(pedido._id)}
+                    >
+                      {deliverers.map((deliverer) => {
+                        const pedidosAtivos = pedidos.filter(
+                          (p) => p.entregador === deliverer._id && p.status !== "entregue"
+                        ).length;
+
+                        return (
+                          <MenuItem
+                            key={deliverer._id}
+                            onClick={() => handleDelivererSelect(pedido._id, deliverer)}
+                            disabled={pedidos.filter(p => p.entregador === deliverer._id && p.status !== "entregue").length >= pedidosPorEntregador}
+                          >
+                            <Typography variant="body2">
+                              {deliverer.nome} ({pedidos.filter(p => p.entregador === deliverer._id && p.status !== "entregue").length}/{pedidosPorEntregador})
+                            </Typography>
+                          </MenuItem>
+
+                        );
+                      })}
+                    </Menu>
+                  )}
+
+                </Paper>
+              ))}
           </List>
+
 
         </>
 
@@ -406,7 +437,7 @@ const PedidosEmAndamento = () => {
       )}
 
       {/* Menu para seleção de entregador */}
-      {pedidos.map((pedido) => (
+      {selectedPedidos.length > 0 && (
         <Menu
           anchorEl={anchorElMulti}
           open={Boolean(anchorElMulti)}
@@ -421,17 +452,18 @@ const PedidosEmAndamento = () => {
               <MenuItem
                 key={deliverer._id}
                 onClick={() => handleEnviarMultiplos(deliverer)}
-                disabled={pedidosAtivos >= pedidosPorEntregador}
+                disabled={pedidos.filter(p => p.entregador === deliverer._id && p.status !== "entregue").length >= pedidosPorEntregador}
               >
                 <Typography variant="body2">
-                  {deliverer.nome} ({pedidosAtivos}/{pedidosPorEntregador})
+                  {deliverer.nome} ({pedidos.filter(p => p.entregador === deliverer._id && p.status !== "entregue").length}/{pedidosPorEntregador})
                 </Typography>
               </MenuItem>
+
             );
           })}
         </Menu>
+      )}
 
-      ))}
     </Box>
   );
 };

@@ -8,7 +8,7 @@ import capaceteIcon from '../assets/helmet.png'
 // Fallback seguro: usa imagem externa se a local falhar
 import restaurantePin from '../assets/restaurantPin.png';
 
-const apiUrl = 'https://gotrackapi.onrender.com';
+const apiUrl = 'http://localhost:10000';
 const MAPBOX_TOKEN = 'pk.eyJ1IjoiaGVsaW93OSIsImEiOiJjbTljNDRnazgwZ3BmMmxwdW9nbWk1c3ZmIn0.NR96Um-T_CqTI3jDb7c2OQ';
 
 
@@ -36,47 +36,46 @@ const Mapa = () => {
         const data = await response.json();
         setRestauranteId(data._id);
         setRestauranteData(data);
-        console.log(restauranteData)
       } catch (error) {
         console.error("Erro ao obter restaurante:", error);
       }
     };
 
     fetchRestaurante();
-  }, [restauranteData]);
+  }, []); // <- antes estava [restauranteData]
 
   useEffect(() => {
     if (!restauranteId) return;
-  
+
     const socket = io(apiUrl);
-  
+
     socket.on("connect", () => {
       console.log("✅ Socket conectado!", socket.id);
       socket.emit("joinRestaurante", { restauranteId });
     });
-  
+
     socket.on("deliverersOnline", (data) => {
       console.log("📍 [MAPA] deliverersOnline recebido:", data);
       if (Array.isArray(data)) {
         const comLocalizacao = data.filter((d) =>
           d.localizacao && !isNaN(d.localizacao.latitude) && !isNaN(d.localizacao.longitude)
         );
-  
+
         const motoristasConvertidos = comLocalizacao.map((d) => ({
           ...d,
           latitude: d.localizacao.latitude,
           longitude: d.localizacao.longitude,
         }));
-  
+
         setMotoristas(motoristasConvertidos);
       }
     });
-  
+
     socket.on("localizacaoAtualizada", (data) => {
       console.log("📍 Localização recebida:", data);
       const latitude = parseFloat(data.latitude);
       const longitude = parseFloat(data.longitude);
-  
+
       if (!isNaN(latitude) && !isNaN(longitude)) {
         setMotoristas((prev) => {
           const atualizados = prev.filter((m) => m._id !== data._id);
@@ -84,10 +83,10 @@ const Mapa = () => {
         });
       }
     });
-  
+
     return () => socket.disconnect();
   }, [restauranteId]);
-  
+
 
   useEffect(() => {
     const geocodificarPedidos = async () => {
@@ -201,72 +200,100 @@ const Mapa = () => {
             </Marker>
           ))}
 
-{pedidos.length > 0 &&
-  pedidos
-    .filter(p => !isNaN(p.latitude) && !isNaN(p.longitude))
-    .map((p) => (
-      <React.Fragment key={p._id}>
-        <Marker
-          longitude={p.longitude}
-          latitude={p.latitude}
-          onClick={() => setPopupPedidoSelecionado(p)}
-        >
-          <img
-            src="https://cdn-icons-png.flaticon.com/512/3448/3448604.png"
-            alt="Pedido"
-            style={{ width: 28, cursor: 'pointer' }}
-          />
-        </Marker>
-
-        {popupPedidoSelecionado && popupPedidoSelecionado._id === p._id && (
-          <Popup
-            anchor="top"
-            longitude={p.longitude}
-            latitude={p.latitude}
-            onClose={() => setPopupPedidoSelecionado(null)}
-            closeOnClick={false}
-          >
-            <div style={{ minWidth: 220, fontFamily: 'Arial, sans-serif' }}>
-              <p style={{ margin: '4px 0' }}><strong>Cliente:</strong> {p.nomeCliente}</p>
-              <p style={{ margin: '4px 0' }}><strong>Endereço:</strong> {p.enderecoCliente}</p>
-              <p style={{ margin: '4px 0 12px' }}><strong>Valor:</strong> R$ {p.valorTotal}</p>
-
-              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
-                <button
-                  onClick={() => console.log('🔄 Reencaminhar pedido', p._id)}
-                  style={{
-                    padding: '6px 12px',
-                    backgroundColor: '#f39c12',
-                    border: 'none',
-                    borderRadius: 4,
-                    color: 'white',
-                    cursor: 'pointer',
-                    fontWeight: 'bold',
-                  }}
+        {pedidos.length > 0 &&
+          pedidos
+            .filter(p =>
+              !isNaN(p.latitude) &&
+              !isNaN(p.longitude) 
+            )
+            .map((p) => (
+              <React.Fragment key={p._id}>
+                <Marker
+                  longitude={p.longitude}
+                  latitude={p.latitude}
+                  onClick={() => setPopupPedidoSelecionado(p)}
                 >
-                  Atribuir Novamente
-                </button>
+                  <div
+                    style={p.status === 'em_rota' ?
+                      {
+                        backgroundColor: 'blue',
+                        color: '#fff',
+                        padding: '2px 6px',
+                        borderRadius: '4px',
+                        fontSize: '12px',
+                        fontWeight: 'bold',
+                        cursor: 'pointer',
+                        whiteSpace: 'nowrap',
+                      } :
+                      {
+                        backgroundColor: '#1976d2',
+                        color: '#fff',
+                        padding: '2px 6px',
+                        borderRadius: '4px',
+                        fontSize: '12px',
+                        fontWeight: 'bold',
 
-                <button
-                  onClick={() => console.log('💬 Enviar mensagem para', p.nomeCliente)}
-                  style={{
-                    padding: '6px 12px',
-                    backgroundColor: '#3498db',
-                    border: 'none',
-                    borderRadius: 4,
-                    color: 'white',
-                    cursor: 'pointer',
-                    fontWeight: 'bold',
-                  }}
-                >
-                  Mensagem
-                </button>
-              </div>
-            </div>
-          </Popup>
-        )}
-      </React.Fragment>
-    ))}
+                        cursor: 'pointer',
+                        whiteSpace: 'nowrap',
+                      }
+                    }
+                  >
+                    {p.numeroPedido}
+                  </div>
+                </Marker>
+
+
+                {popupPedidoSelecionado && popupPedidoSelecionado._id === p._id && (
+                  <Popup
+                    anchor="top"
+                    longitude={p.longitude}
+                    latitude={p.latitude}
+                    onClose={() => setPopupPedidoSelecionado(null)}
+                    closeOnClick={false}
+                  >
+                    <div style={{ minWidth: 220, fontFamily: 'Arial, sans-serif' }}>
+
+                      <p style={{ margin: '4px 0' }}><strong>Cliente:</strong> {p.numeroPedido}</p>
+                      <p style={{ margin: '4px 0' }}><strong>Cliente:</strong> {p.nomeCliente}</p>
+                      <p style={{ margin: '4px 0' }}><strong>Endereço:</strong> {p.enderecoCliente}</p>
+                      <p style={{ margin: '4px 0 12px' }}><strong>Valor:</strong> R$ {p.valorTotal}</p>
+                      
+                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+                        <button
+                          onClick={() => console.log('🔄 Reencaminhar pedido', p._id)}
+                          style={{
+                            padding: '6px 12px',
+                            backgroundColor: '#f39c12',
+                            border: 'none',
+                            borderRadius: 4,
+                            color: 'white',
+                            cursor: 'pointer',
+                            fontWeight: 'bold',
+                          }}
+                        >
+                          Atribuir Novamente
+                        </button>
+
+                        <button
+                          onClick={() => console.log('💬 Enviar mensagem para', p.nomeCliente)}
+                          style={{
+                            padding: '6px 12px',
+                            backgroundColor: '#3498db',
+                            border: 'none',
+                            borderRadius: 4,
+                            color: 'white',
+                            cursor: 'pointer',
+                            fontWeight: 'bold',
+                          }}
+                        >
+                          Mensagem
+                        </button>
+                      </div>
+                    </div>
+                  </Popup>
+                )}
+              </React.Fragment>
+            ))}
 
       </Map>
     </div>

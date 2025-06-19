@@ -13,6 +13,7 @@ import Login from "./pages/Login";
 import Carrinho from "./pages/Carrinho";
 import Checkout from "./pages/Checkout";
 import PedidosCliente from "./pages/PedidosCliente";
+import Acompanhar from "./pages/Acompanhar";
 import { TourProvider, useTour } from '@reactour/tour';
 import {
   Button,
@@ -89,29 +90,29 @@ const AppLayout = () => {
               </Typography>
 
               <Box display="flex" alignItems="center" gap={1.5}>
-<Button
-  onClick={() => setAbrirModalPedido(true)}
-  startIcon={<AddIcon />}
-  variant="contained"
-  size="small"
-  sx={{
-    background: "linear-gradient(90deg, #ff4e4e 0%, #d90429 100%)",
-    color: "#fff",
-    fontWeight: "bold",
-    fontSize: "0.75rem",
-    textTransform: "none",
-    px: 2.5,
-    py: 1,
-    borderRadius: "6px",
-    boxShadow: "0 2px 4px rgba(0,0,0,0.1)",
-    transition: "all 0.3s ease",
-    "&:hover": {
-      background: "linear-gradient(90deg, #ff6f6f 0%, #c00325 100%)",
-    },
-  }}
->
-  Novo Pedido
-</Button>
+                <Button
+                  onClick={() => setAbrirModalPedido(true)}
+                  startIcon={<AddIcon />}
+                  variant="contained"
+                  size="small"
+                  sx={{
+                    background: "linear-gradient(90deg, #ff4e4e 0%, #d90429 100%)",
+                    color: "#fff",
+                    fontWeight: "bold",
+                    fontSize: "0.75rem",
+                    textTransform: "none",
+                    px: 2.5,
+                    py: 1,
+                    borderRadius: "6px",
+                    boxShadow: "0 2px 4px rgba(0,0,0,0.1)",
+                    transition: "all 0.3s ease",
+                    "&:hover": {
+                      background: "linear-gradient(90deg, #ff6f6f 0%, #c00325 100%)",
+                    },
+                  }}
+                >
+                  Novo Pedido
+                </Button>
 
 
                 <Tooltip title="Exibir mapa em tela cheia">
@@ -175,6 +176,7 @@ const App = () => (
     <Route path="/carrinho" element={<Carrinho />} />
     <Route path="/checkout" element={<Checkout />} />
     <Route path="/meus-pedidos/:telefone" element={<PedidosCliente />} />
+    <Route path="/acompanhar/:token" element={<Acompanhar />} /> {/* 👈 NOVA ROTA */}
     <Route path="/erro" element={<ErroRestaurante />} />
 
     <Route
