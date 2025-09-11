@@ -1,7 +1,7 @@
 import axios from 'axios';
 
 const api = axios.create({
-  baseURL: 'http://localhost:3001/api/restaurantes', // Ajuste se necessário
+  baseURL: 'http://168.75.78.51/api/api/restaurantes', // Ajuste se necessário
 });
 
 api.interceptors.request.use((config) => {

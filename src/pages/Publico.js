@@ -31,7 +31,7 @@ import { Chip } from '@mui/material';
 
 
 const DEFAULT_IMAGE_URL = "https://cdn-icons-png.flaticon.com/512/1404/1404945.png";
-const API_URL = process.env.REACT_APP_API_URL || "http://168.75.78.51/api";
+const API_URL = process.env.REACT_APP_API_URL || "http://168.75.78.51/api/api";
 
 const Publico = () => {
   const navigate = useNavigate();
