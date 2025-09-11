@@ -45,7 +45,7 @@ function Login() {
 
     setLoading(true);
     try {
-      const response = await axios.post('http://localhost:10000/api/restaurantes/login', {
+      const response = await axios.post('http://http://168.75.78.51/api/restaurantes/login', {
         email,
         senha,
       });

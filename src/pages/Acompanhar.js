@@ -18,7 +18,7 @@ export default function Acompanhar() {
   useEffect(() => {
     const buscar = async () => {
       try {
-        const res = await fetch(`http://localhost:10000/publico/acompanhar/${token}`);
+        const res = await fetch(`http://168.75.78.51:10000/publico/acompanhar/${token}`);
         if (!res.ok) throw new Error(await res.text());
         const json = await res.json();
         setDados(json);

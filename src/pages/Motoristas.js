@@ -59,7 +59,7 @@ const Motoristas = () => {
     const restauranteId = localStorage.getItem("_id");
     const token = localStorage.getItem("token");
 
-    fetch(`http://localhost:10000/entregadores/byRestaurante/${restauranteId}`, {
+    fetch(`http://168.75.78.51/entregadores/byRestaurante/${restauranteId}`, {
       headers: { Authorization: token },
     })
       .then((res) => res.json())

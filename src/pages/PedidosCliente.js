@@ -14,7 +14,7 @@ import {
 import { useParams, useNavigate } from "react-router-dom";
 import axios from "axios";
 
-const API_URL = process.env.REACT_APP_API_URL || "http://localhost:10000";
+const API_URL = process.env.REACT_APP_API_URL || "http://168.75.78.51/api";
 
 const PedidosCliente = () => {
   const { telefone } = useParams();

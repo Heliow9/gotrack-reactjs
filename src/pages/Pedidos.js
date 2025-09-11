@@ -24,7 +24,7 @@ const DashboardPedidos = () => {
   useEffect(() => {
     const fetchPedidos = async () => {
       try {
-        const res = await axios.get(`http://localhost:10000/api/pedidos/${restauranteId}`);
+        const res = await axios.get(`http://168.75.78.51/api/pedidos/${restauranteId}`);
         setPedidos(res.data);
       } catch (err) {
         console.error("Erro ao buscar pedidos:", err);
