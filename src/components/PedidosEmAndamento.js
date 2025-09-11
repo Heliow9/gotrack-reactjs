@@ -33,7 +33,7 @@ const PedidosEmAndamento = () => {
   const restauranteId = localStorage.getItem("_id");
 
   useEffect(() => {
-    socket.current = io("http://localhost:10000");
+    socket.current = io("http://168.75.78.51/api");
 
     socket.current.on("connect", () => {
       console.log("✅ [Dashboard] Socket conectado:", socket.current.id);
@@ -125,7 +125,7 @@ const PedidosEmAndamento = () => {
     async function handlerGetPedidos() {
       try {
         const response = await axios.get(
-          `http://localhost:10000/api/pedidos/${restauranteId}`
+          `http://168.75.78.51/api/api/pedidos/${restauranteId}`
         );
         console.log("📦 Pedidos recebidos:", response.data);
         setPedidos(response.data);
@@ -153,10 +153,10 @@ const PedidosEmAndamento = () => {
 
       setTimeout(() => {
         // Consulta diretamente o DOM ou busca no backend se ainda está pendente
-        axios.get(`http://localhost:10000/api/pedidos/${pedidoId}`)
+        axios.get(`http://168.75.78.51/api/api/pedidos/${pedidoId}`)
           .then(res => {
             if (res.data.status === "aguardando_resposta") {
-              return axios.put(`http://localhost:10000/api/pedidos/${pedidoId}`, {
+              return axios.put(`http://168.75.78.51/api/api/pedidos/${pedidoId}`, {
                 status: "em_entrega",
               });
             }

@@ -15,7 +15,7 @@ import FormControlLabel from '@mui/material/FormControlLabel';
 import CreditCardIcon from '@mui/icons-material/CreditCard';
 import PixIcon from '@mui/icons-material/Pix'; // ícone nativo do MUI
 
-const API_URL = process.env.REACT_APP_API_URL || "http://localhost:10000";
+const API_URL = process.env.REACT_APP_API_URL || "http://168.75.78.51/api";
 const MAPBOX_TOKEN = 'pk.eyJ1IjoiaGVsaW93OSIsImEiOiJjbTljNDRnazgwZ3BmMmxwdW9nbWk1c3ZmIn0.NR96Um-T_CqTI3jDb7c2OQ';
 
 const DEFAULT_IMAGE_URL = "https://cdn-icons-png.flaticon.com/512/1404/1404945.png";

@@ -87,7 +87,7 @@ const Motoristas = () => {
     };
 
     try {
-      await axios.post("http://localhost:10000/entregadores/register", body, {
+      await axios.post("http://168.75.78.51/api/entregadores/register", body, {
         headers: {
           "Content-Type": "application/json",
           Authorization: token,
@@ -108,7 +108,7 @@ const Motoristas = () => {
     const token = localStorage.getItem("token");
 
     try {
-      await axios.delete(`http://localhost:10000/entregadordelete/${id}`, {
+      await axios.delete(`http://168.75.78.51/api/entregadordelete/${id}`, {
         headers: { Authorization: token },
       });
 
@@ -125,7 +125,7 @@ const Motoristas = () => {
 
     try {
       await axios.put(
-        `http://localhost:10000/entregadores/${motoristaSelecionado._id}/senha`,
+        `http://168.75.78.51/api/entregadores/${motoristaSelecionado._id}/senha`,
         { novaSenha },
         { headers: { Authorization: token } }
       );

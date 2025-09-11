@@ -41,7 +41,7 @@ const Produtos = () => {
   const restauranteId = localStorage.getItem("_id");
 
   const fetchProdutos = async () => {
-    const res = await axios.get(`http://localhost:10000/api/produtos/${restauranteId}`);
+    const res = await axios.get(`http://168.75.78.51/api/api/produtos/${restauranteId}`);
     setProdutos(res.data);
   };
 

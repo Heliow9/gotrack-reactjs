@@ -8,7 +8,7 @@ import capaceteIcon from '../assets/helmet.png'
 // Fallback seguro: usa imagem externa se a local falhar
 import restaurantePin from '../assets/restaurantPin.png';
 
-const apiUrl = 'http://localhost:10000';
+const apiUrl = 'http://168.75.78.51/api';
 const MAPBOX_TOKEN = 'pk.eyJ1IjoiaGVsaW93OSIsImEiOiJjbTljNDRnazgwZ3BmMmxwdW9nbWk1c3ZmIn0.NR96Um-T_CqTI3jDb7c2OQ';
 
 
