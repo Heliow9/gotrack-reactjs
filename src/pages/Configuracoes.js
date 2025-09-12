@@ -51,7 +51,7 @@ const Configuracoes = () => {
     async function fetchConfig() {
       try {
         const token = localStorage.getItem("token");
-        const response = await axios.get("http://168.75.78.51:10000/api/restaurantes/me", {
+        const response = await axios.get("http://168.75.78.51/api/api/restaurantes/me", {
           headers: { Authorization: token },
         });
         if (response.data) {
@@ -163,7 +163,7 @@ const Configuracoes = () => {
       };
 
       await axios.put(
-        "http://168.75.78.51/api/restaurantes/configuracoes",
+        "http://168.75.78.51/api/api/restaurantes/configuracoes",
         payload,
         { headers: { Authorization: token } }
       );

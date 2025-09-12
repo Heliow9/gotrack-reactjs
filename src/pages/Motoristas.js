@@ -59,7 +59,7 @@ const Motoristas = () => {
     const restauranteId = localStorage.getItem("_id");
     const token = localStorage.getItem("token");
 
-    fetch(`http://168.75.78.51/entregadores/byRestaurante/${restauranteId}`, {
+    fetch(`http://168.75.78.51/api/api/entregadores/byRestaurante/${restauranteId}`, {
       headers: { Authorization: token },
     })
       .then((res) => res.json())
@@ -87,7 +87,7 @@ const Motoristas = () => {
     };
 
     try {
-      await axios.post("http://168.75.78.51/api/entregadores/register", body, {
+      await axios.post("http://168.75.78.51/api/api/entregadores/register", body, {
         headers: {
           "Content-Type": "application/json",
           Authorization: token,
@@ -108,7 +108,7 @@ const Motoristas = () => {
     const token = localStorage.getItem("token");
 
     try {
-      await axios.delete(`http://168.75.78.51/api/entregadordelete/${id}`, {
+      await axios.delete(`http://168.75.78.51/api/api/entregadordelete/${id}`, {
         headers: { Authorization: token },
       });
 
