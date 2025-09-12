@@ -12,27 +12,38 @@ import {
   AppBar,
   Toolbar,
   Fade,
-  Chip
+  Chip,
+  Snackbar,
+  Alert
 } from "@mui/material";
 import DeleteIcon from "@mui/icons-material/Delete";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import { useNavigate } from "react-router-dom";
 import { Helmet } from "react-helmet";
+
 const Carrinho = () => {
   const [itensCarrinho, setItensCarrinho] = useState([]);
   const [restaurante, setRestaurante] = useState(null);
+  const [abertoAgora, setAbertoAgora] = useState(false);
+  const [avisoOpen, setAvisoOpen] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
     const dados = localStorage.getItem("carrinho");
-    if (dados) {
-      setItensCarrinho(JSON.parse(dados));
-    }
+    if (dados) setItensCarrinho(JSON.parse(dados));
+
     const restauranteData = localStorage.getItem("restauranteSelecionado");
-    if (restauranteData) {
-      setRestaurante(JSON.parse(restauranteData));
-    }
+    if (restauranteData) setRestaurante(JSON.parse(restauranteData));
   }, []);
+
+  useEffect(() => {
+    // recalcula status periodicamente enquanto estiver na página
+    const update = () => setAbertoAgora(estaAbertoAgora());
+    update();
+    const id = setInterval(update, 30_000); // a cada 30s
+    return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [restaurante]);
 
   const atualizarCarrinho = (novosItens) => {
     setItensCarrinho(novosItens);
@@ -70,32 +81,34 @@ const Carrinho = () => {
     const [hFecha, mFecha] = horario.fecha.split(":").map(Number);
 
     const horarioAbre = new Date(agora);
-    horarioAbre.setHours(hAbre, mAbre, 0);
+    horarioAbre.setHours(hAbre, mAbre, 0, 0);
 
     const horarioFecha = new Date(agora);
-    horarioFecha.setHours(hFecha, mFecha, 0);
+    horarioFecha.setHours(hFecha, mFecha, 0, 0);
 
-    return agora >= horarioAbre && agora <= horarioFecha;
+    // Mesmo critério do Publico.jsx: fechamento é exclusivo (>= fecha = fechado)
+    return agora >= horarioAbre && agora < horarioFecha;
   };
-
-
 
   const calcularTotal = () => {
     return itensCarrinho.reduce((total, item) => total + item.precoTotal, 0);
   };
 
+  const handleFinalizarPedido = () => {
+    if (!abertoAgora) {
+      setAvisoOpen(true);
+      return;
+    }
+    navigate("/checkout");
+  };
+
   const renderExtras = (item) => {
     const blocos = [];
 
-    // Sabores
     if (item.saboresSelecionados?.length > 0) {
-      blocos.push({
-        titulo: "Sabores",
-        opcoes: item.saboresSelecionados.map((s) => `• ${s}`)
-      });
+      blocos.push({ titulo: "Sabores", opcoes: item.saboresSelecionados.map((s) => `• ${s}`) });
     }
 
-    // Borda
     if (item.bordaSelecionada) {
       blocos.push({
         titulo: "Borda",
@@ -103,7 +116,6 @@ const Carrinho = () => {
       });
     }
 
-    // Adicional
     if (item.adicionalSelecionado) {
       blocos.push({
         titulo: "Adicional",
@@ -111,29 +123,22 @@ const Carrinho = () => {
       });
     }
 
-    // Complementos
     if (item.complementosSelecionados?.length > 0) {
-      const opcoes = item.complementosSelecionados.map((comp) =>
-        `• ${comp.nome} (+R$ ${comp.preco.toFixed(2)})`
-      );
+      const opcoes = item.complementosSelecionados.map((comp) => `• ${comp.nome} (+R$ ${comp.preco.toFixed(2)})`);
       blocos.push({ titulo: "Complementos", opcoes });
     }
 
-    // tiposExtras agrupados
     if (item.tiposExtrasSelecionados && typeof item.tiposExtrasSelecionados === "object") {
       Object.entries(item.tiposExtrasSelecionados).forEach(([tipo, opcoes]) => {
         if (Array.isArray(opcoes) && opcoes.length > 0) {
           blocos.push({
             titulo: tipo,
-            opcoes: opcoes.map((op) =>
-              `• ${op.nome}${op.preco ? ` (+R$ ${op.preco.toFixed(2)})` : ""}`
-            )
+            opcoes: opcoes.map((op) => `• ${op.nome}${op.preco ? ` (+R$ ${op.preco.toFixed(2)})` : ""}`)
           });
         }
       });
     }
 
-    // Observação
     if (item.observacao) {
       blocos.push({ titulo: "Observação", opcoes: [`• ${item.observacao}`] });
     }
@@ -154,18 +159,18 @@ const Carrinho = () => {
     );
   };
 
-
-
   return (
     <Box display="flex" flexDirection="column" height="100vh">
       <Helmet>
-        {
-          restaurante ? <title>{restaurante.nome} - Carrinho</title> : null
-        }
+        {restaurante ? <title>{restaurante.nome} - Carrinho</title> : null}
       </Helmet>
+
       <AppBar position="sticky" color="success" elevation={1}>
         <Toolbar sx={{ display: "flex", justifyContent: "space-between" }}>
-          <Button color="inherit" startIcon={<ArrowBackIcon />} onClick={() => navigate("/pedido")}>Voltar</Button>
+          <Button color="inherit" startIcon={<ArrowBackIcon />} onClick={() => navigate("/pedido")}>
+            Voltar
+          </Button>
+
           {restaurante && (
             <Box display="flex" alignItems="center" gap={2}>
               <Avatar
@@ -176,13 +181,15 @@ const Carrinho = () => {
                 <Typography variant="subtitle1" fontWeight="bold">
                   {restaurante.nome}
                 </Typography>
-                <Typography variant="caption" color="text.secondary">
+                <Typography variant="caption" color="text.secondary" display="block">
                   {restaurante.enderecoRua}, {restaurante.enderecoNumero} - {restaurante.enderecoBairro}
                 </Typography>
-                <Typography variant="caption" color={estaAbertoAgora() ? "lightgreen" : "error"}>
-                  {estaAbertoAgora() ? "Aberto agora" : "Fechado agora"}
-                </Typography>
-
+                <Chip
+                  size="small"
+                  label={abertoAgora ? "Aberto agora" : "Fechado agora"}
+                  color={abertoAgora ? "success" : "error"}
+                  sx={{ height: 22, mt: 0.5 }}
+                />
               </Box>
             </Box>
           )}
@@ -190,6 +197,12 @@ const Carrinho = () => {
       </AppBar>
 
       <Box flex={1} overflow="auto" px={2} pt={3} pb={8}>
+        {!abertoAgora && itensCarrinho.length > 0 && (
+          <Alert severity="warning" variant="outlined" sx={{ mb: 2 }}>
+            Restaurante fechado no momento. Você poderá finalizar o pedido assim que reabrir.
+          </Alert>
+        )}
+
         <Typography variant="h5" fontWeight="bold" gutterBottom>
           Meu Carrinho
         </Typography>
@@ -199,11 +212,8 @@ const Carrinho = () => {
         ) : (
           <>
             {itensCarrinho.map((item, idx) => (
-              <Fade in direction="up" key={idx} timeout={830}>
-                <Paper
-                  elevation={3}
-                  sx={{ p: 2, mb: 2, display: "flex", alignItems: "center", gap: 2 }}
-                >
+              <Fade in key={idx} timeout={830}>
+                <Paper elevation={3} sx={{ p: 2, mb: 2, display: "flex", alignItems: "center", gap: 2 }}>
                   <Avatar
                     src={item.imagem || "https://cdn-icons-png.flaticon.com/512/1404/1404945.png"}
                     alt={item.nome}
@@ -220,23 +230,22 @@ const Carrinho = () => {
                     </Typography>
 
                     {item.tiposExtrasSelecionados &&
-                      Object.entries(item.tiposExtrasSelecionados).map(([tipo, opcoes]) => (
-                        opcoes.map((op, idx) => (
-                          op.preco > 0 && (
-                            <Typography key={`${tipo}-${idx}`} variant="body2" color="text.secondary" ml={2}>
+                      Object.entries(item.tiposExtrasSelecionados).map(([tipo, opcoes]) =>
+                        opcoes.map((op, i2) =>
+                          op.preco > 0 ? (
+                            <Typography key={`${tipo}-${i2}`} variant="body2" color="text.secondary" ml={2}>
                               • {tipo}: {op.nome} (+R$ {op.preco.toFixed(2)})
                             </Typography>
-                          )
-                        ))
-                      ))
-                    }
+                          ) : null
+                        )
+                      )}
 
                     <Typography variant="body2" fontWeight="bold" mt={1}>
-                      Total do item: R$ {(item.precoTotal).toFixed(2)}
+                      Total do item: R$ {item.precoTotal.toFixed(2)}
                     </Typography>
 
-
                     {renderExtras(item)}
+
                     <Box display="flex" gap={1} mt={1}>
                       <Button size="small" variant="outlined" onClick={() => alterarQuantidade(idx, -1)}>-</Button>
                       <Button size="small" variant="outlined" onClick={() => alterarQuantidade(idx, 1)}>+</Button>
@@ -265,16 +274,43 @@ const Carrinho = () => {
           boxShadow={3}
           zIndex={1200}
         >
-          <Box display="flex" justifyContent="space-between" alignItems="center">
+          <Box display="flex" justifyContent="space-between" alignItems="center" gap={2} flexWrap="wrap">
             <Typography variant="h6" fontWeight="bold">
               Total: R$ {calcularTotal().toFixed(2)}
             </Typography>
-            <Button variant="contained" color="primary" size="large" onClick={() => navigate("/checkout")}>
+
+            {!abertoAgora && (
+              <Alert severity="warning" sx={{ py: 0.5 }}>
+                Restaurante fechado — finalize quando reabrir.
+              </Alert>
+            )}
+
+            <Button
+              variant="contained"
+              color="primary"
+              size="large"
+              onClick={handleFinalizarPedido}
+              aria-disabled={!abertoAgora}
+              sx={{
+                ...(abertoAgora ? {} : { opacity: 0.7, pointerEvents: "auto" }) // mantém clique para mostrar o aviso
+              }}
+            >
               Finalizar Pedido
             </Button>
           </Box>
         </Box>
       )}
+
+      <Snackbar
+        open={avisoOpen}
+        autoHideDuration={3500}
+        onClose={() => setAvisoOpen(false)}
+        anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
+      >
+        <Alert onClose={() => setAvisoOpen(false)} severity="warning" variant="filled" sx={{ width: "100%" }}>
+          Restaurante fechado no momento. Pedidos só podem ser finalizados no horário de funcionamento.
+        </Alert>
+      </Snackbar>
     </Box>
   );
 };
