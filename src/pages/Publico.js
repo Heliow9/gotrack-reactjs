@@ -15,11 +15,14 @@ import {
   useScrollTrigger,
   Container,
   Divider,
-  IconButton
+  IconButton,
+  Chip,
+  Snackbar,
+  Alert,
+  Badge
 } from "@mui/material";
 import { Helmet } from "react-helmet";
 import HomeIcon from "@mui/icons-material/Home";
-import Badge from "@mui/material/Badge";
 import ShoppingCartIcon from "@mui/icons-material/ShoppingCart";
 import ListAltIcon from "@mui/icons-material/ListAlt";
 import ModalProduto from "../components/ModalProduto";
@@ -27,8 +30,6 @@ import axios from "axios";
 import ArrowBackIosNewIcon from '@mui/icons-material/ArrowBackIosNew';
 import ArrowForwardIosIcon from '@mui/icons-material/ArrowForwardIos';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
-import { Chip } from '@mui/material';
-
 
 const DEFAULT_IMAGE_URL = "https://cdn-icons-png.flaticon.com/512/1404/1404945.png";
 const API_URL = process.env.REACT_APP_API_URL || "http://168.75.78.51/api/api";
@@ -46,18 +47,23 @@ const Publico = () => {
   const [statusLoja, setStatusLoja] = useState("Carregando...");
   const [corStatus, setCorStatus] = useState("default");
 
-
+  // aviso quando fechado
+  const [avisoFechadoOpen, setAvisoFechadoOpen] = useState(false);
+  const [avisoMensagem, setAvisoMensagem] = useState("");
 
   const scrollRef = useRef(null);
 
   const scrollLeft = () => {
-    scrollRef.current.scrollBy({ left: -150, behavior: 'smooth' });
+    if (scrollRef.current) {
+      scrollRef.current.scrollBy({ left: -150, behavior: 'smooth' });
+    }
   };
 
   const scrollRight = () => {
-    scrollRef.current.scrollBy({ left: 150, behavior: 'smooth' });
+    if (scrollRef.current) {
+      scrollRef.current.scrollBy({ left: 150, behavior: 'smooth' });
+    }
   };
-
 
   useEffect(() => {
     const atualizarQuantidade = () => {
@@ -77,6 +83,8 @@ const Publico = () => {
     if (!restauranteData) return navigate("/erro");
     const restaurante = JSON.parse(restauranteData);
     setRestaurante(restaurante);
+
+    // cálculo de status aberto/fechado
     const dias = ['domingo', 'segunda', 'terca', 'quarta', 'quinta', 'sexta', 'sabado'];
     const hoje = new Date();
     const diaAtual = dias[hoje.getDay()];
@@ -102,8 +110,6 @@ const Publico = () => {
       }
     }
 
-
-
     const fetchProdutos = async () => {
       try {
         const res = await axios.get(`${API_URL}/publico/${restaurante.slugIdentificador}`);
@@ -118,19 +124,15 @@ const Publico = () => {
           }));
 
         setProdutos(categoriasFiltradas);
-        console.log(categoriasFiltradas)
+        console.log(categoriasFiltradas);
       } catch (err) {
         console.error("Erro ao buscar produtos:", err);
         navigate("/erro");
       }
     };
 
-
     fetchProdutos();
-  }, []);
-
-
-
+  }, [navigate]);
 
   const renderAvatar = () => {
     if (restaurante?.logoUrl) {
@@ -150,7 +152,15 @@ const Publico = () => {
       window.scrollTo({ top: offsetTop - headerOffset, behavior: "smooth" });
     }
   };
+
   const abrirModalProduto = (item, categoriaType) => {
+    // BLOQUEIO: se estiver fechado, não deixa abrir modal/adicionar
+    if (statusLoja !== "Aberto") {
+      setAvisoMensagem("Restaurante fechado no momento. Não é possível adicionar itens ao carrinho.");
+      setAvisoFechadoOpen(true);
+      return;
+    }
+
     // Corrige os tiposExtras com os itens preenchidos (vindos de item.extras)
     const tiposExtrasCorrigidos = (item.tiposExtras || []).map(extra => ({
       ...extra,
@@ -171,18 +181,12 @@ const Publico = () => {
     setModalAberto(true);
   };
 
-
-
-
-
   return (
-
     <Box sx={{ pb: 10, backgroundColor: "#f7f7f7", minHeight: '100vh' }}>
       <Helmet>
-        {
-          restaurante ? <title>{restaurante.nome} - Pedido</title> : null
-        }
+        {restaurante ? <title>{restaurante.nome} - Pedido</title> : null}
       </Helmet>
+
       <AppBar position="sticky" color="success" sx={{ zIndex: 1201 }}>
         <Toolbar sx={{ px: 2, flexDirection: "row", justifyContent: "space-between", flexWrap: "wrap", gap: 1 }}>
           <Box display="flex" alignItems="center" gap={1} sx={{ flex: 1, minWidth: 0 }}>
@@ -200,7 +204,7 @@ const Publico = () => {
           <Chip
             icon={
               <AccessTimeIcon
-                sx={{ color: statusLoja === "Aberto" ? "#fff" : "#fff" }}
+                sx={{ color: "#fff" }}
                 fontSize="small"
               />
             }
@@ -211,16 +215,13 @@ const Publico = () => {
               color: "#fff",
               fontWeight: 500,
               height: 28,
-              '& .MuiChip-icon': {
-                color: "#fff"
-              },
+              '& .MuiChip-icon': { color: "#fff" },
             }}
           />
-
         </Toolbar>
-
       </AppBar>
 
+      {/* Barra de categorias horizontal */}
       <Box
         sx={{
           position: 'sticky',
@@ -234,12 +235,10 @@ const Publico = () => {
           py: 1,
         }}
       >
-        {/* Seta esquerda */}
         <IconButton onClick={scrollLeft} size="small">
           <ArrowBackIosNewIcon fontSize="small" />
         </IconButton>
 
-        {/* Lista rolável */}
         <Box
           ref={scrollRef}
           sx={{
@@ -278,13 +277,12 @@ const Publico = () => {
           ))}
         </Box>
 
-        {/* Seta direita */}
         <IconButton onClick={scrollRight} size="small">
           <ArrowForwardIosIcon fontSize="small" />
         </IconButton>
       </Box>
 
-
+      {/* Lista de produtos por categoria */}
       <Container sx={{ py: 2 }}>
         {produtos.map((categoria, i) => (
           <Box key={i} ref={el => sectionRefs.current[i] = el} sx={{ mb: 4 }}>
@@ -296,8 +294,10 @@ const Publico = () => {
               {categoria.itens.map((item, index) => (
                 <Grid item xs={12} key={index} style={{ width: '100%' }}>
                   <Fade in timeout={500}>
-                    <Paper elevation={2}
+                    <Paper
+                      elevation={2}
                       onClick={() => abrirModalProduto(item, categoria.tipo || 'simple_item')}
+                      aria-disabled={statusLoja !== "Aberto"}
                       sx={{
                         display: "flex",
                         alignItems: "center",
@@ -306,7 +306,8 @@ const Publico = () => {
                         cursor: 'pointer',
                         borderRadius: 2,
                         boxShadow: "0 2px 8px rgba(0,0,0,0.05)",
-                        '&:hover': { boxShadow: "0 4px 12px rgba(0,0,0,0.1)" }
+                        '&:hover': { boxShadow: "0 4px 12px rgba(0,0,0,0.1)" },
+                        ...(statusLoja !== "Aberto" ? { opacity: 0.75 } : {})
                       }}
                     >
                       <Box sx={{ flex: 1 }}>
@@ -338,15 +339,24 @@ const Publico = () => {
         ))}
       </Container>
 
+      {/* Modal do produto (só abre se status === "Aberto") */}
       {produtoSelecionado && (
-        <ModalProduto open={modalAberto} onClose={() => setModalAberto(false)} produto={produtoSelecionado} />
+        <ModalProduto
+          open={modalAberto}
+          onClose={() => setModalAberto(false)}
+          produto={produtoSelecionado}
+        />
       )}
 
+      {/* Navegação inferior */}
       <Paper elevation={10} sx={{ position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 1000 }}>
         <BottomNavigation showLabels>
           <BottomNavigationAction label="Início" icon={<HomeIcon />} />
-          <BottomNavigationAction label="Pedidos" icon={<ListAltIcon />}
-            onClick={() => navigate("/meus-pedidos")} />
+          <BottomNavigationAction
+            label="Pedidos"
+            icon={<ListAltIcon />}
+            onClick={() => navigate("/meus-pedidos")}
+          />
           <BottomNavigationAction
             label="Carrinho"
             icon={
@@ -358,6 +368,23 @@ const Publico = () => {
           />
         </BottomNavigation>
       </Paper>
+
+      {/* Snackbar de aviso de loja fechada */}
+      <Snackbar
+        open={avisoFechadoOpen}
+        autoHideDuration={4000}
+        onClose={() => setAvisoFechadoOpen(false)}
+        anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
+      >
+        <Alert
+          onClose={() => setAvisoFechadoOpen(false)}
+          severity="warning"
+          variant="filled"
+          sx={{ width: '100%' }}
+        >
+          {avisoMensagem || "Restaurante fechado no momento."}
+        </Alert>
+      </Snackbar>
     </Box>
   );
 };
