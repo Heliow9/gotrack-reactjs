@@ -33,7 +33,10 @@ const PedidosEmAndamento = () => {
   const restauranteId = localStorage.getItem("_id");
 
   useEffect(() => {
-    socket.current = io("http://168.75.78.51/api");
+    const socketInstance = io("http://168.75.78.51", {
+  transports: ["websocket", "polling"],
+});
+    socket.current = io(socketInstance);
 
     socket.current.on("connect", () => {
       console.log("✅ [Dashboard] Socket conectado:", socket.current.id);
