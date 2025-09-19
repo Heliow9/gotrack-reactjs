@@ -112,7 +112,7 @@ const Publico = () => {
 
     const fetchProdutos = async () => {
       try {
-        const res = await axios.get(`${API_URL}/publico/${restaurante.slugIdentificador}`);
+        const res = await axios.get(`${API_URL}/restaurantes/${restaurante.slugIdentificador}`);
 
         const categoriasFiltradas = (res.data.produtosPorCategoria || [])
           .filter(cat => cat.ativa !== false) // só categorias ativas
