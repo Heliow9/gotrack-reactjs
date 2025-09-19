@@ -32,7 +32,7 @@ import ArrowForwardIosIcon from '@mui/icons-material/ArrowForwardIos';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
 
 const DEFAULT_IMAGE_URL = "https://cdn-icons-png.flaticon.com/512/1404/1404945.png";
-const API_URL = process.env.REACT_APP_API_URL || "http://168.75.78.51/api/api";
+const API_URL = 'http://168.75.78.51/api/api'
 
 const Publico = () => {
   const navigate = useNavigate();
@@ -113,6 +113,7 @@ const Publico = () => {
     const fetchProdutos = async () => {
       try {
         const res = await axios.get(`${API_URL}/restaurantes/${restaurante.slugIdentificador}`);
+     
 
         const categoriasFiltradas = (res.data.produtosPorCategoria || [])
           .filter(cat => cat.ativa !== false) // só categorias ativas
