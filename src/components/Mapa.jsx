@@ -8,7 +8,7 @@ import capaceteIcon from '../assets/helmet.png'
 // Fallback seguro: usa imagem externa se a local falhar
 import restaurantePin from '../assets/restaurantPin.png';
 
-const apiUrl = 'http://168.75.78.51/api';
+const apiUrl = 'http://localhost:3001/api';
 const MAPBOX_TOKEN = 'pk.eyJ1IjoiaGVsaW93OSIsImEiOiJjbTljNDRnazgwZ3BmMmxwdW9nbWk1c3ZmIn0.NR96Um-T_CqTI3jDb7c2OQ';
 
 
@@ -26,7 +26,7 @@ const Mapa = () => {
       const token = localStorage.getItem("token");
 
       try {
-        const response = await fetch(`${apiUrl}/api/restaurantes/me`, {
+        const response = await fetch(`${apiUrl}/restaurantes/me`, {
           method: "GET",
           headers: { Authorization: token },
         });

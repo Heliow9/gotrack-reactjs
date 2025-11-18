@@ -14,7 +14,8 @@ import {
 import { useParams, useNavigate } from "react-router-dom";
 import axios from "axios";
 
-const API_URL = process.env.REACT_APP_API_URL || "http://168.75.78.51/api";
+const API_URL = import.meta.env.VITE_API_URL || "http://168.75.78.51/api";
+
 
 const PedidosCliente = () => {
   const { telefone } = useParams();
