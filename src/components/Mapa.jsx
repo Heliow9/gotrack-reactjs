@@ -7,7 +7,8 @@ import { useMapContext } from "../Context/MapContext";
 import capaceteIcon from "../assets/helmet.png";
 import restaurantePin from "../assets/restaurantPin.png";
 
-const apiUrl = "http://localhost:3001/api";
+const apiUrl = "http://localhost:10000/api";
+const SOCKET_URL = "http://localhost:10000";
 const MAPBOX_TOKEN =
   "pk.eyJ1IjoiaGVsaW93OSIsImEiOiJjbTljNDRnazgwZ3BmMmxwdW9nbWk1c3ZmIn0.NR96Um-T_CqTI3jDb7c2OQ";
 
@@ -59,7 +60,7 @@ const Mapa = ({ fullscreen = false }) => {
   useEffect(() => {
     if (!restauranteId) return;
 
-    const socket = io(apiUrl);
+    const socket = io(SOCKET_URL);
 
     socket.on("connect", () => {
       console.log("✅ Socket conectado!", socket.id);

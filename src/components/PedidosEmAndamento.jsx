@@ -26,8 +26,9 @@ import axios from "axios";
 import { usePedidos } from "../Context/PedidosContext";
 import { io } from "socket.io-client";
 
-const API_BASE = "http://168.75.78.51";
+const API_BASE = "http://localhost:10000";
 const PEDIDOS_POR_ENTREGADOR = 3;
+
 
 const PedidosEmAndamento = () => {
   const { selectedPosition, setSelectedPosition, setPedidosMap } =
@@ -131,13 +132,14 @@ const PedidosEmAndamento = () => {
 
   // 🔄 BUSCA INICIAL
   useEffect(() => {
+    if (!restauranteId) return; // 👈 importantíssimo
+
     async function handlerGetPedidos() {
       try {
-        const response = await axios.get(
-          `${API_BASE}/api/api/pedidos/${restauranteId}`
-        );
-        setPedidos(response.data || []);
-        setPedidosMap(response.data || []);
+        const response = await axios.get(`${API_BASE}/api/pedidos/${restauranteId}`);
+        console.log("Pedidos API:", response.data);
+        setPedidos(Array.isArray(response.data) ? response.data : (response.data?.pedidos || []));
+        setPedidosMap(Array.isArray(response.data) ? response.data : (response.data?.pedidos || []));
       } catch (error) {
         console.error("❌ Erro ao buscar pedidos:", error);
       }
@@ -160,10 +162,10 @@ const PedidosEmAndamento = () => {
 
       setTimeout(() => {
         axios
-          .get(`${API_BASE}/api/api/pedidos/${pedidoId}`)
+          .get(`${API_BASE}/api/pedidos/${pedidoId}`)
           .then((res) => {
             if (res.data.status === "aguardando_resposta") {
-              return axios.put(`${API_BASE}/api/api/pedidos/${pedidoId}`, {
+              return axios.put(`${API_BASE}/api/pedidos/${pedidoId}`, {
                 status: "em_entrega",
               });
             }
@@ -399,11 +401,10 @@ const PedidosEmAndamento = () => {
                     p: 1.3,
                     mb: 1.2,
                     mx: 0.6,
-                    border: `1px solid ${
-                      isActive
+                    border: `1px solid ${isActive
                         ? "rgba(255,59,138,0.75)"
                         : "rgba(0,0,0,0.08)"
-                    }`,
+                      }`,
                     boxShadow: isActive
                       ? "0 8px 22px rgba(255,59,138,0.25)"
                       : "0 4px 12px rgba(0,0,0,0.06)",
