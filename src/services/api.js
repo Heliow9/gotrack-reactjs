@@ -1,7 +1,7 @@
 import axios from 'axios';
 
 const api = axios.create({
-  baseURL: 'http://localhost:10000/api/restaurantes', // Ajuste se necessário
+  baseURL: 'https://api.movyo.delivery/api/restaurantes', // Ajuste se necessário
 });
 
 api.interceptors.request.use((config) => {

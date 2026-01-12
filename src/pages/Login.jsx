@@ -53,7 +53,7 @@ function Login() {
     setLoading(true);
     try {
       const response = await axios.post(
-        "http://localhost:10000/api/restaurantes/login",
+        "https://api.movyo.delivery/api/restaurantes/login",
         { email, senha }
       );
 

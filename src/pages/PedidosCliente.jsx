@@ -14,7 +14,7 @@ import {
 import { useParams, useNavigate } from "react-router-dom";
 import axios from "axios";
 
-const API_URL = import.meta.env.VITE_API_URL || "http://168.75.78.51/api";
+const API_URL = import.meta.env.VITE_API_URL || "https://api.movyo.delivery/api";
 
 
 const PedidosCliente = () => {

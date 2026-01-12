@@ -31,7 +31,7 @@ import RefreshRoundedIcon from "@mui/icons-material/RefreshRounded";
 import TuneRoundedIcon from "@mui/icons-material/TuneRounded";
 import CloseRoundedIcon from "@mui/icons-material/CloseRounded";
 
-const API_BASE = "http://localhost:10000";
+const API_BASE = "https://api.movyo.delivery";
 
 const palette = {
   movyo: "#083358",

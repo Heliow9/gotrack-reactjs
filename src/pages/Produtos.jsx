@@ -38,7 +38,7 @@ import ImageIcon from "@mui/icons-material/Image";
 import CloseIcon from "@mui/icons-material/Close";
 import TuneIcon from "@mui/icons-material/Tune";
 
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:10000";
+const API_URL = import.meta.env.VITE_API_URL || "https://api.movyo.delivery";
 
 const MOCK_IMAGE =
   "https://cdn.pixabay.com/photo/2017/12/09/08/18/pizza-3007395_960_720.jpg";

@@ -1,4 +1,5 @@
-import React, { useEffect, useRef, useState } from "react";
+// src/pages/Checkout.jsx
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   Box,
   Typography,
@@ -20,6 +21,17 @@ import {
   Alert,
   Grid,
   Chip,
+  IconButton,
+  InputAdornment,
+  Collapse,
+  List,
+  ListItem,
+  ListItemText,
+  Tooltip,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
 } from "@mui/material";
 import axios from "axios";
 import { useNavigate } from "react-router-dom";
@@ -31,7 +43,17 @@ import FormControlLabel from "@mui/material/FormControlLabel";
 import CreditCardIcon from "@mui/icons-material/CreditCard";
 import PixIcon from "@mui/icons-material/Pix";
 
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:10000/api";
+import ContentCopyIcon from "@mui/icons-material/ContentCopy";
+import CheckCircleIcon from "@mui/icons-material/CheckCircle";
+import HourglassBottomIcon from "@mui/icons-material/HourglassBottom";
+import ErrorOutlineIcon from "@mui/icons-material/ErrorOutline";
+import QrCode2Icon from "@mui/icons-material/QrCode2";
+import EditIcon from "@mui/icons-material/Edit";
+import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
+import ExpandLessIcon from "@mui/icons-material/ExpandLess";
+import ReceiptLongIcon from "@mui/icons-material/ReceiptLong";
+
+const API_URL = import.meta.env.VITE_API_URL || "https://api.movyo.delivery/api";
 const MAPBOX_TOKEN =
   "pk.eyJ1IjoiaGVsaW93OSIsImEiOiJjbTljNDRnazgwZ3BmMmxwdW9nbWk1c3ZmIn0.NR96Um-T_CqTI3jDb7c2OQ";
 
@@ -39,8 +61,14 @@ const MAPBOX_TOKEN =
 const DEFAULT_IMAGE_URL = "";
 
 // ✅ ajuste aqui se sua rota pública de status for diferente
-// Ex.: "/publico/pix/status/:pedidoId" (ficará: `${API_URL}${PIX_STATUS_PATH}/${id}`)
 const PIX_STATUS_PATH = "/publico/pix/status";
+
+const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
+
+const money = (v) => {
+  const num = Number(v || 0);
+  return num.toFixed(2);
+};
 
 const Checkout = () => {
   const navigate = useNavigate();
@@ -90,6 +118,11 @@ const Checkout = () => {
   const [itensPreview, setItensPreview] = useState([]);
   const [subtotalPreview, setSubtotalPreview] = useState(0);
 
+  // UI
+  const [pixCodeOpen, setPixCodeOpen] = useState(false);
+  const [resumoOpen, setResumoOpen] = useState(true);
+  const [confirmEditarPix, setConfirmEditarPix] = useState(false);
+
   // ERROS / FEEDBACK
   const [cepErro, setCepErro] = useState(false);
   const [cepHelper, setCepHelper] = useState("");
@@ -99,14 +132,14 @@ const Checkout = () => {
     severity: "info",
   });
 
-  const restaurante = JSON.parse(localStorage.getItem("restauranteSelecionado"));
+  // ✅ normaliza restaurante do localStorage
+  const restauranteRaw = JSON.parse(localStorage.getItem("restauranteSelecionado") || "null");
+  const restaurante = restauranteRaw?.restaurante ?? restauranteRaw;
 
   // polling PIX
   const pollRef = useRef(null);
 
-  const toast = (severity, message) => {
-    setSnackbar({ open: true, severity, message });
-  };
+  const toast = (severity, message) => setSnackbar({ open: true, severity, message });
 
   const limparPollingPix = () => {
     if (pollRef.current) {
@@ -119,33 +152,24 @@ const Checkout = () => {
     return () => limparPollingPix();
   }, []);
 
-  // ========= HELPERS DE MÁSCARA =========
+  // ========= HELPERS =========
 
   const formatarTelefone = (valor) => {
     const numeros = valor.replace(/\D/g, "");
     if (numeros.length <= 10) {
-      // fixo
-      return numeros.replace(
-        /(\d{0,2})(\d{0,4})(\d{0,4})/,
-        (match, ddd, p1, p2) => {
-          if (!ddd) return numeros;
-          if (!p1) return `(${ddd}`;
-          if (!p2) return `(${ddd}) ${p1}`;
-          return `(${ddd}) ${p1}-${p2}`;
-        }
-      );
-    } else {
-      // celular
-      return numeros.replace(
-        /(\d{0,2})(\d{0,5})(\d{0,4})/,
-        (match, ddd, p1, p2) => {
-          if (!ddd) return numeros;
-          if (!p1) return `(${ddd}`;
-          if (!p2) return `(${ddd}) ${p1}`;
-          return `(${ddd}) ${p1}-${p2}`;
-        }
-      );
+      return numeros.replace(/(\d{0,2})(\d{0,4})(\d{0,4})/, (match, ddd, p1, p2) => {
+        if (!ddd) return numeros;
+        if (!p1) return `(${ddd}`;
+        if (!p2) return `(${ddd}) ${p1}`;
+        return `(${ddd}) ${p1}-${p2}`;
+      });
     }
+    return numeros.replace(/(\d{0,2})(\d{0,5})(\d{0,4})/, (match, ddd, p1, p2) => {
+      if (!ddd) return numeros;
+      if (!p1) return `(${ddd}`;
+      if (!p2) return `(${ddd}) ${p1}`;
+      return `(${ddd}) ${p1}-${p2}`;
+    });
   };
 
   const formatarCEP = (valor) => {
@@ -154,29 +178,22 @@ const Checkout = () => {
     return `${numeros.slice(0, 5)}-${numeros.slice(5)}`;
   };
 
-  // ========= CÁLCULO DE VALOR DO ITEM =========
-
   const calcularValorItem = (item) => {
-    let total = (item.precoUnitario || 0) * item.quantidade;
+    let total = (item.precoUnitario || 0) * (item.quantidade || 1);
 
-    if (item.bordaSelecionada) {
-      total += parseFloat(item.bordaSelecionada.preco || 0) * item.quantidade;
-    }
-
-    if (item.adicionalSelecionado) {
-      total += parseFloat(item.adicionalSelecionado.preco || 0) * item.quantidade;
-    }
+    if (item.bordaSelecionada) total += parseFloat(item.bordaSelecionada.preco || 0) * (item.quantidade || 1);
+    if (item.adicionalSelecionado) total += parseFloat(item.adicionalSelecionado.preco || 0) * (item.quantidade || 1);
 
     if (Array.isArray(item.complementosSelecionados)) {
       item.complementosSelecionados.forEach((c) => {
-        total += parseFloat(c.preco || 0) * item.quantidade;
+        total += parseFloat(c.preco || 0) * (item.quantidade || 1);
       });
     }
 
     if (item.tiposExtrasSelecionados) {
       Object.values(item.tiposExtrasSelecionados).forEach((itens) => {
         itens.forEach((extra) => {
-          total += parseFloat(extra?.preco || 0) * item.quantidade;
+          total += parseFloat(extra?.preco || 0) * (item.quantidade || 1);
         });
       });
     }
@@ -184,35 +201,49 @@ const Checkout = () => {
     return total;
   };
 
-  // ========= CARREGA CARRINHO PARA RESUMO PRÉ-PAGAMENTO =========
+  const telLimpo = useMemo(() => telefone.replace(/\D/g, ""), [telefone]);
+
+  // ========= CARRINHO + RESTAURA PIX PENDENTE =========
 
   useEffect(() => {
-    const carrinho = JSON.parse(localStorage.getItem("carrinho")) || [];
+    const carrinho = JSON.parse(localStorage.getItem("carrinho") || "[]");
     setItensPreview(carrinho);
 
     const subtotal = carrinho.reduce((acc, item) => acc + calcularValorItem(item), 0);
     setSubtotalPreview(subtotal);
 
-    // ✅ se existe pedido PIX pendente salvo, tenta restaurar (opcional mas útil)
+    // ✅ restaura PIX pendente (se existir)
     try {
       const pend = JSON.parse(localStorage.getItem("pix_pendente") || "null");
-      if (pend?._id && pend?.qrCodeTexto) {
-        setResumoPedido((prev) => ({ ...prev, _id: pend._id, total: pend.total || 0, frete: pend.frete || 0 }));
-        setQrCodeTexto(pend.qrCodeTexto);
+      if (pend?._id && (pend?.qrCodeTexto || pend?.qrCodeUrl)) {
+        setResumoPedido((prev) => ({
+          ...prev,
+          _id: pend._id,
+          total: pend.total || 0,
+          frete: pend.frete || 0,
+        }));
+        setQrCodeTexto(pend.qrCodeTexto || "");
         setQrCodeUrl(pend.qrCodeUrl || "");
         setPixStatus(pend.pixStatus || "pending");
+        setFormaPagamento("Pix");
       }
     } catch {}
   }, []);
 
-  // ========= BUSCAR CLIENTE PELO TELEFONE =========
+  // ========= REGRA: TRAVAR FORMULÁRIO SÓ QUANDO PIX GERADO E PENDENTE =========
+
+  const isPix = (formaPagamento || "").toLowerCase() === "pix";
+  const pixPendente = Boolean(resumoPedido?._id) && isPix && Boolean(qrCodeTexto || qrCodeUrl);
+  const travarFormulario = pixPendente;
+
+  // ========= BUSCAR CLIENTE =========
 
   const buscarCliente = async () => {
-    const telLimpo = telefone.replace(/\D/g, "");
-    if (telLimpo.length < 10) return;
+    const t = telLimpo;
+    if (t.length < 10) return;
 
     try {
-      const res = await axios.get(`${API_URL}/clientes/${telLimpo}`);
+      const res = await axios.get(`${API_URL}/clientes/${t}`);
       if (res.data) {
         setNome(res.data.nome || "");
         const ends = res.data.enderecos || [];
@@ -226,14 +257,13 @@ const Checkout = () => {
         setEnderecosCliente([]);
       }
       setClienteCarregado(true);
-    } catch (err) {
-      console.log("Cliente não encontrado.");
+    } catch {
       setEnderecosCliente([]);
       setClienteCarregado(true);
     }
   };
 
-  // ========= BUSCAR ENDEREÇO POR CEP =========
+  // ========= CEP =========
 
   const buscarEnderecoPorCep = async (cepNumerico) => {
     try {
@@ -246,13 +276,12 @@ const Checkout = () => {
         cidade: data.localidade,
         estado: data.uf,
       };
-    } catch (err) {
-      console.error("Erro ao buscar endereço por CEP:", err);
+    } catch {
       return null;
     }
   };
 
-  // ========= GEOCODIFICA ENDEREÇO (MAPBOX) =========
+  // ========= GEOCODIFICA =========
 
   const geocodificarEndereco = async () => {
     const fullAddress = `${endereco.rua} ${endereco.numero}, ${endereco.bairro}, ${endereco.cidade} - ${endereco.estado}, ${endereco.cep}, Brazil`;
@@ -262,6 +291,7 @@ const Checkout = () => {
 
     const res = await fetch(url);
     const data = await res.json();
+
     if (data?.features?.length > 0) {
       const [lng, lat] = data.features[0].center;
       setCoordenadasCliente({ lng, lat });
@@ -270,7 +300,7 @@ const Checkout = () => {
     throw new Error("Endereço não localizado");
   };
 
-  // ========= CÁLCULO DE FRETE (ÁREA > RAIO) =========
+  // ========= FRETE =========
 
   const calcularFrete = async (lng, lat) => {
     try {
@@ -279,7 +309,7 @@ const Checkout = () => {
 
       const pontoCliente = turf.point([lng, lat]);
 
-      // 1) Se cair em alguma ÁREA, usa o valor da área
+      // 1) Áreas
       if (Array.isArray(areas) && areas.length > 0) {
         for (const area of areas) {
           if (!area?.coordenadas) continue;
@@ -290,7 +320,7 @@ const Checkout = () => {
         }
       }
 
-      // 2) Se não tiver área ou não cair em nenhuma, usa RAIO
+      // 2) Raio
       if (
         localizacaoRestaurante &&
         typeof localizacaoRestaurante.longitude === "number" &&
@@ -308,42 +338,32 @@ const Checkout = () => {
       }
 
       return 0;
-    } catch (err) {
-      console.error("Erro ao calcular frete:", err);
+    } catch {
       return 0;
     }
   };
 
-  // ========= FRETE AUTOMÁTICO QUANDO ENDEREÇO MUDA =========
-
+  // frete automático
   useEffect(() => {
     const calcularFreteEndereco = async () => {
-      if (
-        !restaurante ||
-        !endereco.rua ||
-        !endereco.numero ||
-        !endereco.bairro ||
-        !endereco.cidade ||
-        !endereco.estado
-      ) {
-        return;
-      }
+      if (!restaurante?._id) return;
+      if (!endereco.rua || !endereco.numero || !endereco.bairro || !endereco.cidade || !endereco.estado) return;
 
       try {
         const [lng, lat] = await geocodificarEndereco();
         const valorFrete = await calcularFrete(lng, lat);
         setFrete(valorFrete);
-      } catch (err) {
-        console.error("Erro ao calcular frete automático:", err);
+      } catch {
         setFrete(0);
       }
     };
 
-    calcularFreteEndereco();
+    // não recalcula frete enquanto Pix pendente (evita “piscar” resumo)
+    if (!pixPendente) calcularFreteEndereco();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [endereco.rua, endereco.numero, endereco.bairro, endereco.cidade, endereco.estado]);
+  }, [endereco.rua, endereco.numero, endereco.bairro, endereco.cidade, endereco.estado, restaurante?._id]);
 
-  // ========= TROCA / NOVO ENDEREÇO =========
+  // ========= ENDEREÇO =========
 
   const handleEnderecoChange = (index) => {
     setEnderecoSelecionado(index);
@@ -368,11 +388,10 @@ const Checkout = () => {
     setCoordenadasCliente(null);
   };
 
-  // ========= PIX: STATUS =========
+  // ========= PIX =========
 
   const consultarStatusPix = async (pedidoId) => {
     const { data } = await axios.get(`${API_URL}${PIX_STATUS_PATH}/${pedidoId}`);
-    // backend exemplo: { ok: true, status, ... }
     return data;
   };
 
@@ -387,20 +406,15 @@ const Checkout = () => {
         const status = st?.status || st?.payment_status || st?.statusPagamento || null;
         if (status) setPixStatus(status);
 
-        // ✅ pagou
         if (status === "approved" || status === "pago" || status === "paid") {
           limparPollingPix();
           setVerificandoPix(false);
 
-          // ✅ agora sim limpa carrinho e pendência
           localStorage.removeItem("carrinho");
           localStorage.removeItem("pix_pendente");
 
           toast("success", "Pagamento aprovado! ✅ Redirecionando...");
-          setTimeout(() => {
-            const telLimpo = telefone.replace(/\D/g, "");
-            navigate(`/meus-pedidos?telefone=${telLimpo}`);
-          }, 650);
+          setTimeout(() => navigate(`/meus-pedidos/${telLimpo}`), 650);
           return;
         }
 
@@ -408,47 +422,47 @@ const Checkout = () => {
         if (Date.now() - startedAt > 5 * 60 * 1000) {
           limparPollingPix();
           setVerificandoPix(false);
-          toast("info", "Se já pagou, clique em 'Verificar pagamento'.");
         }
-      } catch (e) {
-        // falha temporária ok
+      } catch {
         setVerificandoPix(false);
       }
     }, 2500);
   };
 
-  // ========= FINALIZAR PEDIDO =========
+  const resetarPixParaEditar = () => {
+    limparPollingPix();
+    localStorage.removeItem("pix_pendente");
+    setResumoPedido({ itens: [], total: 0, frete: 0, _id: null });
+    setQrCodeTexto("");
+    setQrCodeUrl("");
+    setPixStatus(null);
+    setVerificandoPix(false);
+    toast("info", "Você pode editar os dados e gerar um novo Pix.");
+  };
+
+  // ========= FINALIZAR =========
 
   const finalizarPedido = async () => {
-    const carrinho = JSON.parse(localStorage.getItem("carrinho")) || [];
-    const telLimpo = telefone.replace(/\D/g, "");
+    const carrinho = JSON.parse(localStorage.getItem("carrinho") || "[]");
 
-    if (!telLimpo || !nome || !endereco.rua || carrinho.length === 0) {
+    if (!restaurante?._id) {
+      toast("error", "Restaurante não identificado. Volte para a vitrine.");
+      return;
+    }
+
+    if (telLimpo.length < 10 || !nome?.trim() || !endereco.rua?.trim() || carrinho.length === 0) {
       toast("warning", "Preencha telefone, nome, endereço de entrega e tenha itens no carrinho.");
       return;
     }
 
     setCarregando(true);
     try {
-      // monta array de endereços para salvar (mantém antigos!)
-      let enderecosParaSalvar = [...enderecosCliente];
-      if (enderecoSelecionado >= 0) {
-        enderecosParaSalvar[enderecoSelecionado] = endereco;
-      } else {
-        enderecosParaSalvar.push(endereco);
-      }
-
-      // await axios.post(`${API_URL}/publico/cliente`, {
-      //   nome,
-      //   telefone: telLimpo,
-      //   enderecos: enderecosParaSalvar,
-      // });
-
       const valorProdutos = carrinho.reduce((acc, item) => acc + calcularValorItem(item), 0);
 
       const [lng, lat] = await geocodificarEndereco();
       const valorFrete = await calcularFrete(lng, lat);
       const valorTotal = valorProdutos + valorFrete;
+
       setFrete(valorFrete);
 
       const carrinhoFormatado = carrinho.map((item) => ({
@@ -489,13 +503,17 @@ const Checkout = () => {
         valorFrete,
       });
 
-      // ✅ Se for Pix: mostra QR e não navega ainda
+      // PIX
       if ((formaPagamento || "").toLowerCase() === "pix") {
-        const pedido = resp.data?.pedido || resp.data?.pedidoCriado || resp.data?.data?.pedido || null;
-        const pedidoId = pedido?._id || resp.data?._id || resp.data?.pedidoId || null;
+        const pedidoId = resp.data?.pedidoId || resp.data?._id || null;
 
-        const qrText = resp.data?.pix_qr_code || resp.data?.qr_code || pedido?.pixInfo?.qr_code || "";
-        const qrBase64 = resp.data?.pix_qr_code_url || resp.data?.qr_code_url || pedido?.pixInfo?.qr_code_url || "";
+        const qrText = resp.data?.pix_qr_code || resp.data?.qr_code || "";
+        const qrBase64 =
+          resp.data?.pix_qr_code_base64 || // ✅ nome do seu backend
+          resp.data?.qr_code_base64 ||
+          resp.data?.pix_qr_code_url ||
+          resp.data?.qr_code_url ||
+          "";
 
         if (!pedidoId) {
           toast("error", "Pedido criado, mas não recebi o ID do pedido no retorno.");
@@ -517,7 +535,6 @@ const Checkout = () => {
         setQrCodeUrl(qrBase64);
         setPixStatus("pending");
 
-        // ✅ salva pendência (se cliente fechar a aba, consegue voltar)
         localStorage.setItem(
           "pix_pendente",
           JSON.stringify({
@@ -530,15 +547,19 @@ const Checkout = () => {
           })
         );
 
-        toast("info", "Pedido criado! Agora faça o pagamento no Pix.");
+        // UX: abre “detalhes do código” fechado por padrão (mais limpo)
+        setPixCodeOpen(false);
+        setResumoOpen(true);
+
+        toast("info", "Pedido criado! Faça o pagamento no Pix.");
         iniciarPollingPix(pedidoId);
         return;
       }
 
-      // ✅ Pedido cartão (ou outros): mantém seu fluxo atual
+      // outros
       localStorage.removeItem("carrinho");
       toast("success", "Pedido realizado com sucesso!");
-      navigate(`/meus-pedidos?telefone=${telLimpo}`);
+      navigate(`/meus-pedidos/${telLimpo}`);
     } catch (err) {
       console.error("Erro backend:", err?.response?.data || err);
       toast("error", "Erro ao finalizar pedido.");
@@ -547,14 +568,14 @@ const Checkout = () => {
     }
   };
 
-  // ========= COPIAR PIX =========
+  // ========= COPIAR =========
 
   const copiarPix = async () => {
     try {
+      if (!qrCodeTexto) return;
       await navigator.clipboard.writeText(qrCodeTexto);
       setCopiado(true);
-    } catch (err) {
-      console.error("Erro ao copiar código:", err);
+    } catch {
       toast("error", "Não consegui copiar o código Pix.");
     }
   };
@@ -575,12 +596,11 @@ const Checkout = () => {
         localStorage.removeItem("pix_pendente");
 
         toast("success", "Pagamento aprovado! ✅ Redirecionando...");
-        const telLimpo = telefone.replace(/\D/g, "");
-        setTimeout(() => navigate(`/meus-pedidos?telefone=${telLimpo}`), 650);
+        setTimeout(() => navigate(`/meus-pedidos/${telLimpo}`), 650);
       } else {
-        toast("info", "Ainda não identificado como pago. Se já pagou, aguarde alguns segundos.");
+        toast("info", "Ainda não identificou como pago. Se você já pagou, aguarde alguns segundos e tente novamente.");
       }
-    } catch (e) {
+    } catch {
       toast("error", "Falha ao consultar status do Pix.");
     } finally {
       setVerificandoPix(false);
@@ -591,21 +611,44 @@ const Checkout = () => {
 
   const totalPreview = subtotalPreview + frete;
 
-  const chipPix = (() => {
+  const chipPix = useMemo(() => {
     const s = String(pixStatus || "").toLowerCase();
     if (!s) return null;
+
     if (s === "approved" || s === "paid" || s === "pago") return { label: "Pago ✅", color: "success" };
-    if (s === "pending" || s === "in_process" || s === "in_process" || s === "authorized")
-      return { label: "Aguardando pagamento", color: "warning" };
+    if (s === "pending" || s === "in_process" || s === "authorized") return { label: "Aguardando", color: "warning" };
     if (s === "rejected" || s === "cancelled" || s === "canceled") return { label: "Não aprovado", color: "error" };
+
     return { label: `Status: ${pixStatus}`, color: "default" };
-  })();
+  }, [pixStatus]);
+
+  const chipIcon = useMemo(() => {
+    if (!chipPix) return undefined;
+    if (chipPix.color === "success") return <CheckCircleIcon />;
+    if (chipPix.color === "warning") return <HourglassBottomIcon />;
+    if (chipPix.color === "error") return <ErrorOutlineIcon />;
+    return undefined;
+  }, [chipPix]);
+
+  // itens do resumo: compactar (máx 6 linhas + “ver mais”)
+  const resumoItens = useMemo(() => {
+    const base = itensPreview || [];
+    return base.map((it) => ({
+      key: `${it?.produtoId || it?._id || it?.nome || "item"}-${Math.random()}`,
+      nome: it?.nome || "Item",
+      qtd: Number(it?.quantidade || 1),
+      total: calcularValorItem(it),
+    }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [itensPreview]);
+
+  const maxResumo = 6;
+  const resumoMostrado = resumoOpen ? resumoItens : resumoItens.slice(0, maxResumo);
+  const temMaisResumo = resumoItens.length > maxResumo;
 
   return (
     <Box display="flex" flexDirection="column" minHeight="100vh" sx={{ backgroundColor: "#f5f5f7" }}>
-      <Helmet>
-        {restaurante ? <title>{restaurante.nome} - Checkout</title> : <title>Checkout</title>}
-      </Helmet>
+      <Helmet>{restaurante ? <title>{restaurante.nome} - Checkout</title> : <title>Checkout</title>}</Helmet>
 
       {/* APPBAR */}
       <AppBar
@@ -616,11 +659,11 @@ const Checkout = () => {
         }}
       >
         <Toolbar sx={{ justifyContent: "space-between" }}>
-          <Box display="flex" alignItems="center" gap={2}>
-            <Avatar src={restaurante?.logoUrl || DEFAULT_IMAGE_URL}>
+          <Box display="flex" alignItems="center" gap={2} minWidth={0}>
+            <Avatar src={restaurante?.logoUrl || DEFAULT_IMAGE_URL} sx={{ width: 34, height: 34 }}>
               {!restaurante?.logoUrl && restaurante?.nome ? restaurante.nome[0].toUpperCase() : null}
             </Avatar>
-            <Box>
+            <Box minWidth={0}>
               <Typography variant="subtitle1" fontWeight="bold" noWrap>
                 {restaurante?.nome || "Restaurante"}
               </Typography>
@@ -631,20 +674,231 @@ const Checkout = () => {
               )}
             </Box>
           </Box>
+
           <Button color="inherit" onClick={() => navigate("/carrinho")} sx={{ textTransform: "none" }}>
             Voltar
           </Button>
         </Toolbar>
       </AppBar>
 
-      <Container maxWidth="sm" sx={{ py: 3, flex: 1 }}>
+      <Container maxWidth="sm" sx={{ py: 2.5, flex: 1 }}>
         <Typography variant="h5" fontWeight="bold" gutterBottom>
           Finalizar Pedido
         </Typography>
 
+        {/* ✅ PIX TOP CARD (compacto) */}
+        {resumoPedido._id && isPix && (
+          <Paper
+            elevation={0}
+            sx={{
+              mb: 2,
+              p: 1.5,
+              borderRadius: 3,
+              border: "1px solid #eee",
+              background: "linear-gradient(180deg, rgba(255,75,139,0.10) 0%, rgba(255,179,71,0.12) 100%)",
+            }}
+          >
+            <Stack direction="row" alignItems="center" justifyContent="space-between" gap={1}>
+              <Stack spacing={0.25} minWidth={0}>
+                <Stack direction="row" alignItems="center" gap={1}>
+                  <QrCode2Icon fontSize="small" />
+                  <Typography fontWeight={900} noWrap>
+                    Pix do pedido
+                  </Typography>
+                  {chipPix && (
+                    <Chip
+                      label={chipPix.label}
+                      color={chipPix.color}
+                      variant="filled"
+                      size="small"
+                      sx={{ fontWeight: 900 }}
+                      icon={chipIcon}
+                    />
+                  )}
+                  {verificandoPix && <CircularProgress size={16} />}
+                </Stack>
+
+                <Typography variant="caption" color="text.secondary" noWrap>
+                  Pedido <b>{resumoPedido._id}</b> • Total <b>R$ {money(resumoPedido.total || totalPreview)}</b>
+                </Typography>
+              </Stack>
+
+              <Stack direction="row" spacing={1} alignItems="center" flexShrink={0}>
+                <Button
+                  variant="contained"
+                  size="small"
+                  onClick={verificarPagamentoAgora}
+                  disabled={verificandoPix}
+                  sx={{
+                    textTransform: "none",
+                    fontWeight: 900,
+                    borderRadius: 2,
+                    background: "linear-gradient(90deg,#ff4b8b,#ff7a3d,#ffb347)",
+                    "&:hover": { opacity: 0.95, background: "linear-gradient(90deg,#ff4b8b,#ff7a3d,#ffb347)" },
+                  }}
+                >
+                  {verificandoPix ? <CircularProgress size={18} /> : "Verificar"}
+                </Button>
+
+                <Tooltip title="Copiar código Pix">
+                  <span>
+                    <IconButton
+                      onClick={copiarPix}
+                      disabled={!qrCodeTexto}
+                      size="small"
+                      sx={{
+                        bgcolor: "rgba(255,255,255,0.65)",
+                        border: "1px solid rgba(0,0,0,0.06)",
+                        "&:hover": { bgcolor: "rgba(255,255,255,0.85)" },
+                      }}
+                    >
+                      <ContentCopyIcon fontSize="small" />
+                    </IconButton>
+                  </span>
+                </Tooltip>
+
+                <Tooltip title={pixCodeOpen ? "Ocultar QR / código" : "Mostrar QR / código"}>
+                  <IconButton
+                    size="small"
+                    onClick={() => setPixCodeOpen((v) => !v)}
+                    sx={{
+                      bgcolor: "rgba(255,255,255,0.65)",
+                      border: "1px solid rgba(0,0,0,0.06)",
+                      "&:hover": { bgcolor: "rgba(255,255,255,0.85)" },
+                    }}
+                  >
+                    {pixCodeOpen ? <ExpandLessIcon fontSize="small" /> : <ExpandMoreIcon fontSize="small" />}
+                  </IconButton>
+                </Tooltip>
+              </Stack>
+            </Stack>
+
+            <Collapse in={pixCodeOpen} timeout={250}>
+              <Divider sx={{ my: 1.2 }} />
+
+              <Grid container spacing={1.2} alignItems="stretch">
+                <Grid item xs={12} sm={5}>
+                  <Paper
+                    variant="outlined"
+                    sx={{
+                      height: "100%",
+                      p: 1.2,
+                      borderRadius: 2.5,
+                      bgcolor: "#fff",
+                      borderColor: "rgba(255,122,61,0.25)",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      minHeight: 160,
+                    }}
+                  >
+                    {qrCodeUrl ? (
+                      <img
+                        src={`data:image/png;base64,${qrCodeUrl}`}
+                        alt="QR Code Pix"
+                        style={{ width: "100%", maxWidth: 160, height: "auto", objectFit: "contain", display: "block" }}
+                      />
+                    ) : (
+                      <Box textAlign="center">
+                        <Typography variant="subtitle2" fontWeight={900}>
+                          QR indisponível
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          Use o botão de copiar.
+                        </Typography>
+                      </Box>
+                    )}
+                  </Paper>
+                </Grid>
+
+                <Grid item xs={12} sm={7}>
+                  <Paper
+                    variant="outlined"
+                    sx={{
+                      height: "100%",
+                      p: 1.2,
+                      borderRadius: 2.5,
+                      bgcolor: "#fff",
+                      borderColor: "rgba(255,122,61,0.25)",
+                    }}
+                  >
+                    <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={1}>
+                      <Typography variant="subtitle2" fontWeight={900}>
+                        Código Pix
+                      </Typography>
+
+                      <Button
+                        size="small"
+                        variant="outlined"
+                        onClick={copiarPix}
+                        disabled={!qrCodeTexto}
+                        startIcon={<ContentCopyIcon fontSize="small" />}
+                        sx={{ textTransform: "none", fontWeight: 900, borderRadius: 2 }}
+                      >
+                        Copiar
+                      </Button>
+                    </Stack>
+
+                    {/* Mostra só um “preview” compacto; detalhes ficam no Dialog */}
+                    <Box
+                      sx={{
+                        mt: 1,
+                        p: 1,
+                        borderRadius: 2,
+                        border: "1px solid rgba(0,0,0,0.08)",
+                        bgcolor: "#fafafa",
+                        fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+                        fontSize: 12,
+                        lineHeight: 1.4,
+                        maxHeight: 86,
+                        overflow: "hidden",
+                        wordBreak: "break-all",
+                      }}
+                    >
+                      {qrCodeTexto || "—"}
+                    </Box>
+
+                    <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mt: 1 }}>
+                      <Button
+                        size="small"
+                        onClick={() => setPixCodeOpen(true)}
+                        sx={{ textTransform: "none", fontWeight: 800, opacity: 0.85 }}
+                        disabled
+                      >
+                        {/* placeholder (mantém layout bonito) */}
+                      </Button>
+
+                      <Button
+                        size="small"
+                        onClick={() => setConfirmEditarPix(true)}
+                        startIcon={<EditIcon fontSize="small" />}
+                        sx={{ textTransform: "none", fontWeight: 900 }}
+                      >
+                        Editar dados / gerar novo Pix
+                      </Button>
+                    </Stack>
+
+                    <Alert
+                      severity="info"
+                      sx={{
+                        mt: 1,
+                        py: 0.5,
+                        borderRadius: 2,
+                        backgroundColor: "rgba(255,255,255,0.75)",
+                      }}
+                    >
+                      Confirmou? Se o status não atualizar, toque em <b>Verificar</b>.
+                    </Alert>
+                  </Paper>
+                </Grid>
+              </Grid>
+            </Collapse>
+          </Paper>
+        )}
+
         <Paper
           sx={{
-            p: 3,
+            p: 2.2,
             borderRadius: 3,
             boxShadow: "0px 2px 8px rgba(15, 23, 42, 0.08)",
           }}
@@ -660,7 +914,7 @@ const Checkout = () => {
               setClienteCarregado(false);
             }}
             onBlur={buscarCliente}
-            disabled={!!resumoPedido._id} // trava após gerar PIX
+            disabled={travarFormulario}
           />
           <TextField
             label="Nome"
@@ -668,7 +922,7 @@ const Checkout = () => {
             margin="normal"
             value={nome}
             onChange={(e) => setNome(e.target.value)}
-            disabled={!!resumoPedido._id}
+            disabled={travarFormulario}
           />
 
           <Divider sx={{ my: 2 }} />
@@ -676,7 +930,7 @@ const Checkout = () => {
           {/* ENDEREÇOS SALVOS */}
           {enderecosCliente.length > 0 && (
             <Stack direction="row" spacing={2} alignItems="center">
-              <FormControl fullWidth margin="normal" disabled={!!resumoPedido._id}>
+              <FormControl fullWidth margin="normal" disabled={travarFormulario}>
                 <InputLabel id="endereco-select-label">Selecionar Endereço</InputLabel>
                 <Select
                   labelId="endereco-select-label"
@@ -696,9 +950,9 @@ const Checkout = () => {
                 onClick={adicionarEnderecoNovo}
                 variant="outlined"
                 sx={{ mt: 2, whiteSpace: "nowrap", textTransform: "none" }}
-                disabled={!!resumoPedido._id}
+                disabled={travarFormulario}
               >
-                + Novo Endereço
+                + Novo
               </Button>
             </Stack>
           )}
@@ -707,14 +961,13 @@ const Checkout = () => {
             Endereço de Entrega
           </Typography>
 
-          {/* ENDEREÇO DE ENTREGA */}
           <TextField
             label="Apelido"
             fullWidth
             margin="dense"
             value={endereco.apelido || ""}
             onChange={(e) => setEndereco({ ...endereco, apelido: e.target.value })}
-            disabled={!!resumoPedido._id}
+            disabled={travarFormulario}
           />
 
           <TextField
@@ -724,7 +977,7 @@ const Checkout = () => {
             value={endereco.cep || ""}
             error={cepErro}
             helperText={cepHelper}
-            disabled={!!resumoPedido._id}
+            disabled={travarFormulario}
             onChange={async (e) => {
               const cepMascarado = formatarCEP(e.target.value);
               const cepNumerico = cepMascarado.replace(/\D/g, "");
@@ -750,7 +1003,7 @@ const Checkout = () => {
             margin="dense"
             value={endereco.rua || ""}
             onChange={(e) => setEndereco({ ...endereco, rua: e.target.value })}
-            disabled={!!resumoPedido._id}
+            disabled={travarFormulario}
           />
           <TextField
             label="Número"
@@ -758,7 +1011,7 @@ const Checkout = () => {
             margin="dense"
             value={endereco.numero || ""}
             onChange={(e) => setEndereco({ ...endereco, numero: e.target.value })}
-            disabled={!!resumoPedido._id}
+            disabled={travarFormulario}
           />
           <TextField
             label="Complemento"
@@ -766,7 +1019,7 @@ const Checkout = () => {
             margin="dense"
             value={endereco.complemento || ""}
             onChange={(e) => setEndereco({ ...endereco, complemento: e.target.value })}
-            disabled={!!resumoPedido._id}
+            disabled={travarFormulario}
           />
           <TextField
             label="Bairro"
@@ -774,7 +1027,7 @@ const Checkout = () => {
             margin="dense"
             value={endereco.bairro || ""}
             onChange={(e) => setEndereco({ ...endereco, bairro: e.target.value })}
-            disabled={!!resumoPedido._id}
+            disabled={travarFormulario}
           />
           <TextField
             label="Cidade"
@@ -782,7 +1035,7 @@ const Checkout = () => {
             margin="dense"
             value={endereco.cidade || ""}
             onChange={(e) => setEndereco({ ...endereco, cidade: e.target.value })}
-            disabled={!!resumoPedido._id}
+            disabled={travarFormulario}
           />
           <TextField
             label="Estado"
@@ -790,92 +1043,106 @@ const Checkout = () => {
             margin="dense"
             value={endereco.estado || ""}
             onChange={(e) => setEndereco({ ...endereco, estado: e.target.value })}
-            disabled={!!resumoPedido._id}
+            disabled={travarFormulario}
           />
 
-          {/* FRETE */}
-          <Typography variant="body2" color="success.main" sx={{ mt: 1, fontWeight: 500 }}>
-            Frete estimado: R$ {frete.toFixed(2)}
+          <Typography variant="body2" color="success.main" sx={{ mt: 1, fontWeight: 600 }}>
+            Frete estimado: R$ {money(frete)}
           </Typography>
 
-          {/* MAPA DO ENDEREÇO */}
-          {coordenadasCliente && (
-            <Box mt={2}>
-              <Typography variant="caption" color="text.secondary" sx={{ mb: 0.5, display: "block" }}>
-                Localização aproximada:
-              </Typography>
-              <Paper
-                variant="outlined"
-                sx={{
-                  borderRadius: 2,
-                  overflow: "hidden",
-                  borderColor: "#e0e0e0",
-                }}
-              >
-                <img
-                  src={`https://api.mapbox.com/styles/v1/mapbox/streets-v11/static/pin-s+ff4b8b(${coordenadasCliente.lng},${coordenadasCliente.lat})/${coordenadasCliente.lng},${coordenadasCliente.lat},15,0/600x300?access_token=${MAPBOX_TOKEN}`}
-                  alt="Mapa do endereço"
-                  style={{
-                    width: "100%",
-                    height: 180,
-                    objectFit: "cover",
-                    display: "block",
-                  }}
-                />
-              </Paper>
-            </Box>
-          )}
-
-          {/* RESUMO DO PEDIDO */}
-          {itensPreview.length > 0 && !resumoPedido._id && (
+          {/* ✅ RESUMO (compacto, não gigante) */}
+          {itensPreview.length > 0 && (
             <Paper
               elevation={0}
               sx={{
-                mt: 3,
-                p: 2,
+                mt: 2,
+                p: 1.4,
                 bgcolor: "#fafafa",
-                borderRadius: 2,
-                border: "1px solid #e0e0e0",
+                borderRadius: 2.5,
+                border: "1px solid #e9e9e9",
               }}
             >
-              <Typography variant="subtitle2" gutterBottom>
-                Resumo do Pedido
-              </Typography>
-
-              {itensPreview.map((item, idx) => (
-                <Box key={idx} sx={{ mb: 1 }}>
-                  <Typography variant="body2" fontWeight="bold">
-                    • {item.quantidade}x {item.nome} — R$ {calcularValorItem(item).toFixed(2)}
+              <Stack direction="row" alignItems="center" justifyContent="space-between" gap={1}>
+                <Stack direction="row" alignItems="center" gap={1}>
+                  <ReceiptLongIcon fontSize="small" />
+                  <Typography variant="subtitle2" fontWeight={900}>
+                    Resumo
                   </Typography>
-                </Box>
-              ))}
+                </Stack>
 
-              <Divider sx={{ my: 1.5 }} />
+                {temMaisResumo && (
+                  <Button
+                    size="small"
+                    onClick={() => setResumoOpen((v) => !v)}
+                    startIcon={resumoOpen ? <ExpandLessIcon /> : <ExpandMoreIcon />}
+                    sx={{ textTransform: "none", fontWeight: 900 }}
+                  >
+                    {resumoOpen ? "Menos" : "Mais"}
+                  </Button>
+                )}
+              </Stack>
 
-              <Box display="flex" justifyContent="space-between">
-                <Typography variant="body2">Subtotal</Typography>
-                <Typography variant="body2">R$ {subtotalPreview.toFixed(2)}</Typography>
-              </Box>
+              <List dense sx={{ py: 0.5 }}>
+                {resumoMostrado.map((it, idx) => (
+                  <ListItem key={`${it.key}-${idx}`} disableGutters sx={{ py: 0.25 }}>
+                    <ListItemText
+                      primary={
+                        <Stack direction="row" justifyContent="space-between" alignItems="baseline" gap={1}>
+                          <Typography variant="body2" fontWeight={800} noWrap sx={{ maxWidth: "70%" }}>
+                            {it.qtd}x {it.nome}
+                          </Typography>
+                          <Typography variant="body2" fontWeight={900}>
+                            R$ {money(it.total)}
+                          </Typography>
+                        </Stack>
+                      }
+                    />
+                  </ListItem>
+                ))}
 
-              <Box display="flex" justifyContent="space-between" mt={0.5}>
-                <Typography variant="body2">Frete</Typography>
-                <Typography variant="body2">R$ {frete.toFixed(2)}</Typography>
-              </Box>
+                {!resumoOpen && temMaisResumo && (
+                  <ListItem disableGutters sx={{ py: 0 }}>
+                    <Typography variant="caption" color="text.secondary">
+                      + {resumoItens.length - maxResumo} itens…
+                    </Typography>
+                  </ListItem>
+                )}
+              </List>
 
-              <Box display="flex" justifyContent="space-between" mt={1.2}>
-                <Typography variant="body1" fontWeight="bold">
-                  Total estimado
-                </Typography>
-                <Typography variant="body1" fontWeight="bold">
-                  R$ {totalPreview.toFixed(2)}
-                </Typography>
-              </Box>
+              <Divider sx={{ my: 1 }} />
+
+              <Stack spacing={0.4}>
+                <Stack direction="row" justifyContent="space-between">
+                  <Typography variant="body2" color="text.secondary">
+                    Subtotal
+                  </Typography>
+                  <Typography variant="body2" fontWeight={800}>
+                    R$ {money(subtotalPreview)}
+                  </Typography>
+                </Stack>
+                <Stack direction="row" justifyContent="space-between">
+                  <Typography variant="body2" color="text.secondary">
+                    Frete
+                  </Typography>
+                  <Typography variant="body2" fontWeight={800}>
+                    R$ {money(frete)}
+                  </Typography>
+                </Stack>
+                <Stack direction="row" justifyContent="space-between" sx={{ mt: 0.4 }}>
+                  <Typography variant="body1" fontWeight={900}>
+                    Total
+                  </Typography>
+                  <Typography variant="body1" fontWeight={900}>
+                    R$ {money(totalPreview)}
+                  </Typography>
+                </Stack>
+              </Stack>
             </Paper>
           )}
 
-          {/* SEÇÃO DE PAGAMENTO / BOTÕES (ANTES DO PIX) */}
+          {/* PAGAMENTO (só aparece antes de gerar Pix) */}
           {!resumoPedido._id && (
-            <Box mt={4}>
+            <Box mt={3}>
               <Grid container spacing={2} alignItems="flex-start" justifyContent="space-between">
                 <Grid item xs={12} md={6}>
                   <Typography variant="subtitle1" fontWeight="bold" gutterBottom>
@@ -907,27 +1174,27 @@ const Checkout = () => {
                 </Grid>
 
                 <Grid item xs={12} md={6}>
-                  <Box display="flex" justifyContent="flex-end" gap={2} mt={{ xs: 2, md: 4 }}>
-                    <Button variant="outlined" onClick={() => navigate("/carrinho")}>
+                  <Box display="flex" justifyContent="flex-end" gap={2} mt={{ xs: 1, md: 4 }}>
+                    <Button variant="outlined" onClick={() => navigate("/carrinho")} sx={{ textTransform: "none" }}>
                       Voltar
                     </Button>
 
                     <Button
                       variant="contained"
-                      color="primary"
                       onClick={finalizarPedido}
                       disabled={carregando}
                       sx={{
                         textTransform: "none",
-                        fontWeight: 700,
+                        fontWeight: 900,
+                        borderRadius: 2,
                         background: "linear-gradient(90deg,#ff4b8b,#ff7a3d,#ffb347)",
                         "&:hover": {
-                          opacity: 0.9,
+                          opacity: 0.95,
                           background: "linear-gradient(90deg,#ff4b8b,#ff7a3d,#ffb347)",
                         },
                       }}
                     >
-                      {carregando ? <CircularProgress size={24} /> : "Finalizar pedido"}
+                      {carregando ? <CircularProgress size={22} /> : "Finalizar pedido"}
                     </Button>
                   </Box>
                 </Grid>
@@ -935,93 +1202,59 @@ const Checkout = () => {
             </Box>
           )}
 
-          {/* ✅ BLOCO PIX (DEPOIS QUE GEROU) */}
-          {resumoPedido._id && (formaPagamento || "").toLowerCase() === "pix" && (
-            <Box mt={3}>
-              <Divider sx={{ my: 2 }} />
-
-              <Stack direction="row" spacing={1} alignItems="center" justifyContent="space-between" flexWrap="wrap">
-                <Typography variant="h6" fontWeight={800}>
-                  Pagamento via Pix
-                </Typography>
-
-                {chipPix && <Chip label={chipPix.label} color={chipPix.color} variant="filled" />}
-              </Stack>
-
-              <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-                Escaneie o QR Code ou copie o código Pix. Assim que o pagamento for aprovado, você será redirecionado.
-              </Typography>
-
-              <Paper
-                variant="outlined"
-                sx={{
-                  mt: 2,
-                  p: 2,
-                  borderRadius: 2,
-                  borderColor: "#e0e0e0",
-                  bgcolor: "#fff",
-                }}
-              >
-                {qrCodeUrl ? (
-                  <Box display="flex" justifyContent="center">
-                    <img
-                      src={`data:image/png;base64,${qrCodeUrl}`}
-                      alt="QR Code Pix"
-                      style={{ width: 260, height: 260, objectFit: "contain" }}
-                    />
-                  </Box>
-                ) : (
-                  <Typography variant="body2" color="text.secondary">
-                    QR Code não veio em base64. Você ainda pode copiar o código abaixo.
-                  </Typography>
-                )}
-
-                <TextField
-                  label="Código Pix (copia e cola)"
-                  fullWidth
-                  margin="normal"
-                  value={qrCodeTexto || ""}
-                  multiline
-                  minRows={3}
-                  InputProps={{ readOnly: true }}
-                />
-
-                <Stack direction={{ xs: "column", sm: "row" }} spacing={1} justifyContent="flex-end">
-                  <Button variant="outlined" onClick={copiarPix} disabled={!qrCodeTexto}>
-                    Copiar Pix
-                  </Button>
-
-                  <Button
-                    variant="contained"
-                    onClick={verificarPagamentoAgora}
-                    disabled={verificandoPix}
-                    sx={{
-                      textTransform: "none",
-                      fontWeight: 700,
-                      background: "linear-gradient(90deg,#ff4b8b,#ff7a3d,#ffb347)",
-                      "&:hover": {
-                        opacity: 0.9,
-                        background: "linear-gradient(90deg,#ff4b8b,#ff7a3d,#ffb347)",
-                      },
-                    }}
-                  >
-                    {verificandoPix ? <CircularProgress size={20} /> : "Verificar pagamento"}
-                  </Button>
-                </Stack>
-
-                <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: "block" }}>
-                  Pedido: {resumoPedido._id}
-                </Typography>
-              </Paper>
-            </Box>
+          {/* Se Pix pendente: dica compacta (sem gigantismo) */}
+          {pixPendente && (
+            <Alert
+              severity="info"
+              sx={{
+                mt: 2,
+                borderRadius: 2,
+                backgroundColor: "rgba(255,255,255,0.8)",
+              }}
+            >
+              Pagamento Pix pendente. Você pode copiar o código e pagar no app do banco.
+              {` `}
+              Quando pagar, o status atualiza automaticamente — ou toque em <b>Verificar</b>.
+            </Alert>
           )}
         </Paper>
       </Container>
 
+      {/* CONFIRMAR: EDITAR DADOS / NOVO PIX */}
+      <Dialog open={confirmEditarPix} onClose={() => setConfirmEditarPix(false)}>
+        <DialogTitle>Editar dados?</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary">
+            Isso vai remover o Pix pendente do navegador e destravar os campos para você editar.
+            O pedido já criado no backend continuará existindo (se quiser, você pode cancelá-lo no painel).
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setConfirmEditarPix(false)} sx={{ textTransform: "none" }}>
+            Voltar
+          </Button>
+          <Button
+            onClick={() => {
+              setConfirmEditarPix(false);
+              resetarPixParaEditar();
+            }}
+            variant="contained"
+            sx={{
+              textTransform: "none",
+              fontWeight: 900,
+              background: "linear-gradient(90deg,#ff4b8b,#ff7a3d,#ffb347)",
+              "&:hover": { opacity: 0.95, background: "linear-gradient(90deg,#ff4b8b,#ff7a3d,#ffb347)" },
+            }}
+          >
+            Destravar e editar
+          </Button>
+        </DialogActions>
+      </Dialog>
+
       {/* SNACKBAR PIX COPIADO */}
       <Snackbar
         open={copiado}
-        autoHideDuration={2000}
+        autoHideDuration={1800}
         onClose={() => setCopiado(false)}
         anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
       >

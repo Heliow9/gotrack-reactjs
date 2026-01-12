@@ -1,3 +1,4 @@
+// src/pages/Publico.jsx
 import React, { useEffect, useState, useRef } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
@@ -34,7 +35,73 @@ import axios from "axios";
 
 const DEFAULT_IMAGE_URL =
   "https://cdn-icons-png.flaticon.com/512/1404/1404945.png";
-const API_URL = "http://168.75.78.51/api/api";
+
+const API_URL = "https://api.movyo.delivery/api";
+
+/**
+ * Calcula status "Aberto" / "Fechado"
+ * com suporte a horários que viram madrugada (ex: 18:00 -> 02:00).
+ */
+function calcularStatusLoja(rest) {
+  const dias = [
+    "domingo",
+    "segunda",
+    "terca",
+    "quarta",
+    "quinta",
+    "sexta",
+    "sabado",
+  ];
+  const hoje = new Date();
+  const diaAtual = dias[hoje.getDay()];
+  const horarioHoje = rest?.horariosFuncionamento?.[diaAtual];
+
+  if (!horarioHoje || horarioHoje.fechado) return "Fechado";
+
+  const [abreHora, abreMin] = (horarioHoje.abre || "00:00")
+    .split(":")
+    .map(Number);
+  const [fechaHora, fechaMin] = (horarioHoje.fecha || "00:00")
+    .split(":")
+    .map(Number);
+
+  const agora = new Date();
+
+  const horarioAbre = new Date(agora);
+  horarioAbre.setHours(abreHora, abreMin, 0, 0);
+
+  const horarioFecha = new Date(agora);
+  horarioFecha.setHours(fechaHora, fechaMin, 0, 0);
+
+  // Fecha após meia-noite (ex: 18:00 -> 02:00)
+  if (horarioFecha <= horarioAbre) {
+    horarioFecha.setDate(horarioFecha.getDate() + 1);
+
+    // Se agora é depois da meia-noite e ainda antes do fecha,
+    // então o horário de abertura foi "ontem"
+    if (agora < horarioAbre) {
+      horarioAbre.setDate(horarioAbre.getDate() - 1);
+    }
+  }
+
+  return agora >= horarioAbre && agora < horarioFecha ? "Aberto" : "Fechado";
+}
+
+/**
+ * ✅ Normaliza SEMPRE para "objeto restaurante puro"
+ * (para não quebrar checkout e demais páginas).
+ */
+function normalizarRestaurante(qualquerCoisa) {
+  if (!qualquerCoisa) return null;
+
+  // se vier { restaurante: {...} }
+  if (qualquerCoisa.restaurante && typeof qualquerCoisa.restaurante === "object") {
+    return qualquerCoisa.restaurante;
+  }
+
+  // se vier o restaurante direto
+  return qualquerCoisa;
+}
 
 const Publico = () => {
   const navigate = useNavigate();
@@ -82,60 +149,72 @@ const Publico = () => {
     return () => clearInterval(intervalo);
   }, []);
 
+  // ✅ Carrega restaurante + produtos (sempre revalidando na API)
   useEffect(() => {
     const restauranteData = localStorage.getItem("restauranteSelecionado");
-    if (!restauranteData) return navigate("/erro");
 
-    const restauranteLS = JSON.parse(restauranteData);
-    setRestaurante(restauranteLS);
-
-    // cálculo de status aberto/fechado
-    const dias = [
-      "domingo",
-      "segunda",
-      "terca",
-      "quarta",
-      "quinta",
-      "sexta",
-      "sabado",
-    ];
-    const hoje = new Date();
-    const diaAtual = dias[hoje.getDay()];
-    const horarioHoje = restauranteLS.horariosFuncionamento?.[diaAtual];
-
-    if (!horarioHoje || horarioHoje.fechado) {
-      setStatusLoja("Fechado");
-    } else {
-      const [abreHora, abreMin] = (horarioHoje.abre || "00:00")
-        .split(":")
-        .map(Number);
-      const [fechaHora, fechaMin] = (horarioHoje.fecha || "00:00")
-        .split(":")
-        .map(Number);
-
-      const agora = new Date();
-      const horarioAbre = new Date(agora);
-      horarioAbre.setHours(abreHora, abreMin, 0, 0);
-
-      const horarioFecha = new Date(agora);
-      horarioFecha.setHours(fechaHora, fechaMin, 0, 0);
-
-      if (agora < horarioAbre || agora >= horarioFecha) {
-        setStatusLoja("Fechado");
-      } else {
-        setStatusLoja("Aberto");
-      }
+    // Sem LS e sem slug na rota, não dá pra identificar a loja
+    if (!restauranteData && !slug) {
+      navigate("/erro", { replace: true });
+      return;
     }
 
-    const fetchProdutos = async () => {
+    const restauranteLSRaw = restauranteData ? JSON.parse(restauranteData) : null;
+    const restauranteLS = normalizarRestaurante(restauranteLSRaw);
+
+    // slug efetivo: rota > LS.slugIdentificador > LS.slug
+    const slugEfetivo =
+      slug ||
+      restauranteLS?.slugIdentificador ||
+      restauranteLS?.slug ||
+      null;
+
+    if (!slugEfetivo) {
+      navigate("/erro", { replace: true });
+      return;
+    }
+
+    // Render rápido com LS (se existir), mas não confia nele pra sempre
+    if (restauranteLS) {
+      setRestaurante(restauranteLS);
+      setStatusLoja(calcularStatusLoja(restauranteLS));
+    } else {
+      setStatusLoja("Carregando...");
+    }
+
+    const fetchTudo = async () => {
       try {
         setLoadingProdutos(true);
-        const res = await axios.get(
-          `${API_URL}/restaurantes/${restauranteLS.slugIdentificador}`
+
+        const res = await axios.get(`${API_URL}/restaurantes/${slugEfetivo}`);
+
+        // ✅ restaurante puro
+        const restauranteFresh = normalizarRestaurante(res.data);
+
+        if (!restauranteFresh) {
+          navigate("/erro", { replace: true });
+          return;
+        }
+
+        // ✅ produtos podem vir fora do restaurante
+        const produtosPorCategoria =
+          res.data?.produtosPorCategoria ||
+          restauranteFresh?.produtosPorCategoria ||
+          [];
+
+        // ✅ MUITO IMPORTANTE:
+        // salvar SEMPRE o restaurante puro no localStorage
+        localStorage.setItem(
+          "restauranteSelecionado",
+          JSON.stringify(restauranteFresh)
         );
 
+        // atualiza restaurante/status
+        setRestaurante(restauranteFresh);
+        setStatusLoja(calcularStatusLoja(restauranteFresh));
+
         // 1) categorias ativas
-        const categoriasBase = (res.data.produtosPorCategoria || []).filter(
+        const categoriasBase = (produtosPorCategoria || []).filter(
           (cat) => cat.ativa !== false
         );
 
@@ -154,14 +233,14 @@ const Publico = () => {
 
         setProdutos(categoriasComProdutos);
       } catch (err) {
-        console.error("Erro ao buscar produtos:", err);
-        navigate("/erro");
+        console.error("Erro ao buscar produtos/restaurante:", err);
+        navigate("/erro", { replace: true });
       } finally {
         setLoadingProdutos(false);
       }
     };
 
-    fetchProdutos();
+    fetchTudo();
   }, [navigate, slug]);
 
   const renderAvatar = (size = 40) => {
@@ -319,7 +398,7 @@ const Publico = () => {
       <Box
         sx={{
           position: "sticky",
-          top: 64, // só AppBar
+          top: 64,
           zIndex: 1100,
           backgroundColor: "#f5f5f7",
           borderBottom: "1px solid #e0e0e0",
@@ -491,6 +570,7 @@ const Publico = () => {
                         >
                           {item.nome}
                         </Typography>
+
                         {item.descricao && (
                           <Typography
                             variant="body2"
@@ -507,11 +587,7 @@ const Publico = () => {
                           </Typography>
                         )}
 
-                        <Stack
-                          direction="row"
-                          spacing={1}
-                          alignItems="center"
-                        >
+                        <Stack direction="row" spacing={1} alignItems="center">
                           <Typography
                             variant="body2"
                             color="primary"
@@ -524,10 +600,11 @@ const Publico = () => {
                                     parseFloat(s.preco || 0)
                                   )
                                 ).toFixed(2)}`
-                              : `R$ ${parseFloat(
-                                  item.precoBase || 0
-                                ).toFixed(2)}`}
+                              : `R$ ${parseFloat(item.precoBase || 0).toFixed(
+                                  2
+                                )}`}
                           </Typography>
+
                           {item.tag && (
                             <Chip
                               label={item.tag}
@@ -559,6 +636,7 @@ const Publico = () => {
                             borderRadius: 2,
                           }}
                         />
+
                         {!lojaAberta && (
                           <Box
                             sx={{

@@ -42,9 +42,9 @@ import WifiIcon from "@mui/icons-material/Wifi";
 import axios from "axios";
 import { io } from "socket.io-client";
 
-const API_BASE = "http://localhost:10000";
-const API_DELETE_BASE = "http://localhost:10000";
-const SOCKET_BASE = "http://localhost:10000";
+const API_BASE = "https://api.movyo.delivery";
+const API_DELETE_BASE = "https://api.movyo.delivery";
+const SOCKET_BASE = "https://api.movyo.delivery";
 
 const Motoristas = () => {
   const [motoristas, setMotoristas] = useState([]);
