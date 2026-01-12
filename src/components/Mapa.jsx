@@ -7,8 +7,8 @@ import { useMapContext } from "../Context/MapContext";
 import capaceteIcon from "../assets/helmet.png";
 import restaurantePin from "../assets/restaurantPin.png";
 
-const apiUrl = "http://localhost:10000/api";
-const SOCKET_URL = "http://localhost:10000";
+const apiUrl = "https://api.movyo.delivery/api";
+const SOCKET_URL = "https://api.movyo.delivery";
 const MAPBOX_TOKEN =
   "pk.eyJ1IjoiaGVsaW93OSIsImEiOiJjbTljNDRnazgwZ3BmMmxwdW9nbWk1c3ZmIn0.NR96Um-T_CqTI3jDb7c2OQ";
 

@@ -33,7 +33,7 @@ import "mapbox-gl/dist/mapbox-gl.css";
 
 import axios from "axios";
 
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:10000";
+const API_URL = import.meta.env.VITE_API_URL || "https://api.movyo.delivery";
 
 const MAPBOX_API_KEY =
   "pk.eyJ1IjoiaGVsaW93OSIsImEiOiJjbTljNDRnazgwZ3BmMmxwdW9nbWk1c3ZmIn0.NR96Um-T_CqTI3jDb7c2OQ";
