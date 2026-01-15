@@ -227,7 +227,7 @@ const Checkout = () => {
         setPixStatus(pend.pixStatus || "pending");
         setFormaPagamento("Pix");
       }
-    } catch {}
+    } catch { }
   }, []);
 
   // ========= REGRA: TRAVAR FORMULÁRIO SÓ QUANDO PIX GERADO E PENDENTE =========
@@ -548,12 +548,18 @@ const Checkout = () => {
         );
 
         // UX: abre “detalhes do código” fechado por padrão (mais limpo)
-        setPixCodeOpen(false);
         setResumoOpen(true);
+        setPixCodeOpen(true);
+        toast("info", "Pix gerado! Vamos te levar até o pagamento.");
 
-        toast("info", "Pedido criado! Faça o pagamento no Pix.");
+        // força o scroll (além do useEffect)
+        setTimeout(() => {
+          scrollToPix();
+        }, 250);
+
         iniciarPollingPix(pedidoId);
         return;
+
       }
 
       // outros

@@ -210,8 +210,8 @@ const App = () => {
       />
 
       {/* rotas públicas */}
-      <Route path="/pedido/:slug" element={<PedidoSlugRedirect />} />
-      <Route path="/pedido" element={<Publico />} />
+      <Route path="/p/:slug" element={<PedidoSlugRedirect />} />
+      <Route path="/p" element={<Publico />} />
       <Route path="/carrinho" element={<Carrinho />} />
       <Route path="/checkout" element={<Checkout />} />
       <Route path="/meus-pedidos/:telefone" element={<PedidosCliente />} />

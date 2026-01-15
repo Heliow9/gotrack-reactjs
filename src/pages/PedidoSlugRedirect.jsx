@@ -16,7 +16,7 @@ const PedidoSlugRedirect = () => {
         const res = await axios.get(`${API_URL}/restaurantes/${slug}`);
         if (res.data?.restaurante) {
           localStorage.setItem("restauranteSelecionado", JSON.stringify(res.data.restaurante));
-          navigate("/pedido");
+          navigate("/p");
     
         } else {
           navigate("/erro");
