@@ -44,7 +44,7 @@ import axios from "axios";
 const DEFAULT_IMAGE_URL =
   "https://cdn-icons-png.flaticon.com/512/1404/1404945.png";
 
-const API_URL = "https://app.movyo.delivery/api";
+const API_URL = "https://api.movyo.delivery/api";
 
 /**
  * Calcula status "Aberto" / "Fechado"
