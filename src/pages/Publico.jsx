@@ -36,6 +36,7 @@ import AccessTimeIcon from "@mui/icons-material/AccessTime";
 import SearchIcon from "@mui/icons-material/Search";
 import CloseIcon from "@mui/icons-material/Close";
 import AddShoppingCartIcon from "@mui/icons-material/AddShoppingCart";
+import StarIcon from "@mui/icons-material/Star";
 
 import ModalProduto from "../components/ModalProduto";
 import axios from "axios";
@@ -43,7 +44,7 @@ import axios from "axios";
 const DEFAULT_IMAGE_URL =
   "https://cdn-icons-png.flaticon.com/512/1404/1404945.png";
 
-const API_URL = "https://api.movyo.delivery/api";
+const API_URL = "http://localhost:10000/api";
 
 /**
  * Calcula status "Aberto" / "Fechado"
@@ -112,6 +113,34 @@ function formatBRL(value) {
   return num.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
 
+/**
+ * ✅ Inferência robusta do tipo (evita quebrar quando categoria.tipo vem errado)
+ */
+function inferCategoriaType(categoria, item) {
+  if (categoria?.pizzaMultisabor) return "pizza";
+  if (item?.pizzaMultisabor) return "pizza";
+
+  // Se a categoria permite sabores, muito provavelmente é pizza
+  if (categoria?.permiteSabores) return "pizza";
+
+  // Se o produto tem sabores cadastrados, é pizza (mesmo que categoria.tipo esteja errado)
+  if ((item?.sabores || []).length > 0) return "pizza";
+
+  // fallback legado
+  return categoria?.tipo || "simple_item";
+}
+
+/**
+ * ✅ Decide se deve mostrar "a partir de"
+ */
+function shouldShowAPartirDe({ categoria, item, categoriaType }) {
+  const sabores = item?.sabores || [];
+  const isPizza = categoriaType === "pizza";
+  const isMulti =
+    Boolean(categoria?.pizzaMultisabor) || Boolean(item?.pizzaMultisabor);
+  return isPizza && (isMulti || sabores.length > 1);
+}
+
 const Publico = () => {
   const navigate = useNavigate();
   const { slug } = useParams();
@@ -122,6 +151,12 @@ const Publico = () => {
   const sectionRefs = useRef([]);
   const stickyRef = useRef(null);
   const categoriasScrollRef = useRef(null);
+
+  // ✅ Destaques (scroll lateral)
+  const destaquesScrollRef = useRef(null);
+  const [destaqueIndex, setDestaqueIndex] = useState(0);
+  const isDraggingDestaquesRef = useRef(false);
+  const autoplayRef = useRef(null);
 
   const [modalAberto, setModalAberto] = useState(false);
   const [produtoSelecionado, setProdutoSelecionado] = useState(null);
@@ -138,7 +173,6 @@ const Publico = () => {
   const [headerCompacto, setHeaderCompacto] = useState(false);
 
   const isMobile = useMediaQuery("(max-width:600px)");
-
   const lojaAberta = statusLoja === "Aberto";
 
   // ======= Carrinho contador =======
@@ -165,7 +199,7 @@ const Publico = () => {
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
-  // ======= Fetch restaurante/produtos (mantém tua lógica) =======
+  // ======= Fetch restaurante/produtos =======
   useEffect(() => {
     const restauranteData = localStorage.getItem("restauranteSelecionado");
 
@@ -274,8 +308,94 @@ const Publico = () => {
   }, [produtosRaw, busca]);
 
   const totalItensEncontrados = useMemo(() => {
-    return (produtos || []).reduce((acc, cat) => acc + (cat.itens?.length || 0), 0);
+    return (produtos || []).reduce(
+      (acc, cat) => acc + (cat.itens?.length || 0),
+      0
+    );
   }, [produtos]);
+
+  // ✅ Destaques (derivado do RAW; robusto p/ boolean/string/number)
+  const destaques = useMemo(() => {
+    const termo = (busca || "").trim().toLowerCase();
+    const all = [];
+
+    for (const cat of (produtosRaw || [])) {
+      for (const item of (cat.itens || [])) {
+        const isDestaque =
+          item?.destaque === true ||
+          item?.destaque === "true" ||
+          item?.destaque === 1 ||
+          item?.destaque === "1";
+
+        if (!isDestaque) continue;
+
+        if (termo) {
+          const nome = (item.nome || "").toLowerCase();
+          const desc = (item.descricao || "").toLowerCase();
+          const tag = (item.tag || "").toLowerCase();
+          const match =
+            nome.includes(termo) || desc.includes(termo) || tag.includes(termo);
+          if (!match) continue;
+        }
+
+        all.push({ item, categoria: cat });
+      }
+    }
+
+    all.sort(
+      (a, b) => Number(a.item?.ordem || 0) - Number(b.item?.ordem || 0)
+    );
+    return all;
+  }, [produtosRaw, busca]);
+
+  // ✅ helper: centraliza um card por índice (snap forte)
+  const scrollToDestaqueIndex = (idx, behavior = "smooth") => {
+    const container = destaquesScrollRef.current;
+    if (!container) return;
+
+    const cards = container.querySelectorAll("[data-destaque-card='1']");
+    if (!cards || !cards.length) return;
+
+    const safeIdx = ((idx % cards.length) + cards.length) % cards.length;
+    const el = cards[safeIdx];
+
+    const left =
+      el.offsetLeft - container.clientWidth / 2 + el.clientWidth / 2;
+
+    container.scrollTo({ left, behavior });
+    setDestaqueIndex(safeIdx);
+  };
+
+  // ✅ inicializa no primeiro destaque quando carregar
+  useEffect(() => {
+    if (!loadingProdutos && destaques.length > 0) {
+      // sem animação na primeira centralização
+      scrollToDestaqueIndex(0, "auto");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loadingProdutos, destaques.length]);
+
+  // ✅ autoplay: a cada 10s (pausa no modal e durante drag)
+  useEffect(() => {
+    if (autoplayRef.current) clearInterval(autoplayRef.current);
+
+    if (loadingProdutos) return;
+    if (!destaques.length) return;
+    if (modalAberto) return;
+
+    autoplayRef.current = setInterval(() => {
+      if (isDraggingDestaquesRef.current) return;
+      scrollToDestaqueIndex(destaqueIndex + 1);
+    }, 10000);
+
+    return () => {
+      if (autoplayRef.current) clearInterval(autoplayRef.current);
+    };
+  }, [loadingProdutos, destaques.length, modalAberto, destaqueIndex]);
+
+  // botões (mantém compatível)
+  const scrollDestaquesLeft = () => scrollToDestaqueIndex(destaqueIndex - 1);
+  const scrollDestaquesRight = () => scrollToDestaqueIndex(destaqueIndex + 1);
 
   // ======= Categoria ativa via IntersectionObserver =======
   useEffect(() => {
@@ -289,8 +409,7 @@ const Publico = () => {
         const visiveis = entries
           .filter((e) => e.isIntersecting)
           .sort(
-            (a, b) =>
-              (b.intersectionRatio || 0) - (a.intersectionRatio || 0)
+            (a, b) => (b.intersectionRatio || 0) - (a.intersectionRatio || 0)
           );
 
         if (visiveis[0]) {
@@ -309,16 +428,21 @@ const Publico = () => {
     return () => obs.disconnect();
   }, [produtos]);
 
-  // centraliza categoria selecionada (só UX, não muda lógica)
+  // centraliza categoria selecionada
   useEffect(() => {
     const container = categoriasScrollRef.current;
-    const btn = container?.querySelector?.(`[data-cat-index="${categoriaAtiva}"]`);
+    const btn = container?.querySelector?.(
+      `[data-cat-index="${categoriaAtiva}"]`
+    );
     if (!container || !btn) return;
 
     const containerRect = container.getBoundingClientRect();
     const btnRect = btn.getBoundingClientRect();
     const offset =
-      btnRect.left - containerRect.left - containerRect.width / 2 + btnRect.width / 2;
+      btnRect.left -
+      containerRect.left -
+      containerRect.width / 2 +
+      btnRect.width / 2;
 
     container.scrollBy({ left: offset, behavior: "smooth" });
   }, [categoriaAtiva]);
@@ -339,9 +463,7 @@ const Publico = () => {
         .slice(0, 2)
         .toUpperCase();
       return (
-        <Avatar sx={{ width: size, height: size }}>
-          {initials || "R"}
-        </Avatar>
+        <Avatar sx={{ width: size, height: size }}>{initials || "R"}</Avatar>
       );
     }
     return (
@@ -377,7 +499,11 @@ const Publico = () => {
     }
   };
 
-  const abrirModalProduto = (item, categoriaType) => {
+  /**
+   * ✅ Abre modal passando também “regras da categoria”
+   * ✅ Pausa autoplay automaticamente pois modalAberto = true
+   */
+  const abrirModalProduto = (item, categoria) => {
     if (!lojaAberta) {
       setAvisoMensagem(
         "Restaurante fechado no momento. Não é possível adicionar itens ao carrinho."
@@ -385,6 +511,8 @@ const Publico = () => {
       setAvisoFechadoOpen(true);
       return;
     }
+
+    const categoriaType = inferCategoriaType(categoria, item);
 
     const tiposExtrasCorrigidos = (item.tiposExtras || []).map((extra) => ({
       ...extra,
@@ -395,27 +523,42 @@ const Publico = () => {
       ...item,
       precoBase: item.precoBase,
       categoriaType,
+
+      pizzaMultisabor:
+        Boolean(categoria?.pizzaMultisabor) || Boolean(item?.pizzaMultisabor),
+      calculoPrecoPor:
+        categoria?.calculoPrecoPor || item?.calculoPrecoPor || "maior",
+      maxSabores:
+        categoria?.maxSabores ||
+        item?.maxSabores ||
+        (categoria?.pizzaMultisabor ? 2 : 1),
+
       saboresDisponiveis: item.sabores || [],
       bordasDisponiveis: item.bordas || [],
       complementos: item.complementos || [],
       adicionais: item.adicionais || [],
       tiposExtras: tiposExtrasCorrigidos,
+
+      categoriaNome: categoria?.nome || "",
     });
 
     setModalAberto(true);
   };
 
-  const getPrecoLabel = (item) => {
-    if (item.categoriaType === "pizza" && (item.sabores || []).length > 1) {
-      const menor = Math.min(
-        ...(item.sabores || []).map((s) => Number(s.preco || 0))
-      );
-      return `a partir de ${formatBRL(menor)}`;
+  const getPrecoLabel = (item, categoria, categoriaType) => {
+    const sabores = item?.sabores || [];
+
+    if (
+      shouldShowAPartirDe({ categoria, item, categoriaType }) &&
+      sabores.length > 0
+    ) {
+      const menor = Math.min(...sabores.map((s) => Number(s.preco || 0)));
+      if (Number.isFinite(menor)) return `a partir de ${formatBRL(menor)}`;
     }
+
     return formatBRL(item.precoBase || 0);
   };
 
-  // Chips informativos (só se existir)
   const chipsInfo = useMemo(() => {
     const list = [];
 
@@ -423,10 +566,16 @@ const Publico = () => {
       list.push({ key: "tempo", label: `${restaurante.tempoEntrega} min` });
     }
     if (restaurante?.taxaEntrega != null) {
-      list.push({ key: "taxa", label: `Entrega ${formatBRL(restaurante.taxaEntrega)}` });
+      list.push({
+        key: "taxa",
+        label: `Entrega ${formatBRL(restaurante.taxaEntrega)}`,
+      });
     }
     if (restaurante?.pedidoMinimo != null) {
-      list.push({ key: "min", label: `Mín. ${formatBRL(restaurante.pedidoMinimo)}` });
+      list.push({
+        key: "min",
+        label: `Mín. ${formatBRL(restaurante.pedidoMinimo)}`,
+      });
     }
 
     return list;
@@ -462,7 +611,12 @@ const Publico = () => {
             gap: 1,
           }}
         >
-          <Box display="flex" alignItems="center" gap={1.5} sx={{ flex: 1, minWidth: 0 }}>
+          <Box
+            display="flex"
+            alignItems="center"
+            gap={1.5}
+            sx={{ flex: 1, minWidth: 0 }}
+          >
             {renderAvatar(headerCompacto ? 32 : 36)}
             <Box sx={{ minWidth: 0 }}>
               <Typography
@@ -501,7 +655,6 @@ const Publico = () => {
           />
         </Toolbar>
 
-        {/* Chips extras (só quando NÃO compacto) */}
         {!headerCompacto && chipsInfo.length > 0 && (
           <Box sx={{ px: 2, pb: 1 }}>
             <Stack direction="row" spacing={1} sx={{ overflowX: "auto" }}>
@@ -566,9 +719,12 @@ const Publico = () => {
             }}
           />
 
-          {/* contador de resultados */}
           {!loadingProdutos && (
-            <Typography variant="caption" color="text.secondary" sx={{ mt: 0.75, display: "block" }}>
+            <Typography
+              variant="caption"
+              color="text.secondary"
+              sx={{ mt: 0.75, display: "block" }}
+            >
               {busca
                 ? `${totalItensEncontrados} item(s) encontrado(s) para “${busca.trim()}”`
                 : "Dica: use a busca pra achar rapidinho qualquer item."}
@@ -630,7 +786,10 @@ const Publico = () => {
                 >
                   {categoria.nome}
                   {categoria?.itens?.length ? (
-                    <Box component="span" sx={{ ml: 1, opacity: selected ? 0.95 : 0.65, fontWeight: 800 }}>
+                    <Box
+                      component="span"
+                      sx={{ ml: 1, opacity: selected ? 0.95 : 0.65, fontWeight: 800 }}
+                    >
                       • {categoria.itens.length}
                     </Box>
                   ) : null}
@@ -644,6 +803,201 @@ const Publico = () => {
           </IconButton>
         </Box>
       </Box>
+
+      {/* ✅ DESTAQUES FORA DO STICKY (não fica fixado) */}
+      {!loadingProdutos && destaques.length > 0 && (
+        <Box sx={{ pt: 1.2, pb: 1.2 }}>
+          <Box sx={{ px: 2, mb: 0.8, display: "flex", alignItems: "center", gap: 1 }}>
+            <Chip
+              icon={<StarIcon sx={{ color: "#fff !important" }} fontSize="small" />}
+              label="Destaques"
+              size="small"
+              sx={{
+                bgcolor: "#111827",
+                color: "#fff",
+                fontWeight: 900,
+                borderRadius: "999px",
+              }}
+            />
+            <Typography variant="caption" sx={{ color: "text.secondary", fontWeight: 700 }}>
+              Passa sozinho a cada 10s
+            </Typography>
+
+            <Box sx={{ ml: "auto", display: "flex", gap: 0.5 }}>
+              <IconButton onClick={scrollDestaquesLeft} size="small" aria-label="Destaques anteriores">
+                <ArrowBackIosNewIcon fontSize="small" />
+              </IconButton>
+              <IconButton onClick={scrollDestaquesRight} size="small" aria-label="Próximos destaques">
+                <ArrowForwardIosIcon fontSize="small" />
+              </IconButton>
+            </Box>
+          </Box>
+
+          {/* Wrapper com gradiente lateral */}
+          <Box
+            sx={{
+              position: "relative",
+              "&:before, &:after": {
+                content: '""',
+                position: "absolute",
+                top: 0,
+                bottom: 0,
+                width: 32,
+                zIndex: 3,
+                pointerEvents: "none",
+              },
+              "&:before": {
+                left: 0,
+                background:
+                  "linear-gradient(90deg, rgba(245,245,247,1) 0%, rgba(245,245,247,0) 100%)",
+              },
+              "&:after": {
+                right: 0,
+                background:
+                  "linear-gradient(270deg, rgba(245,245,247,1) 0%, rgba(245,245,247,0) 100%)",
+              },
+            }}
+          >
+            <Box
+              ref={destaquesScrollRef}
+              onPointerDown={() => (isDraggingDestaquesRef.current = true)}
+              onPointerUp={() => (isDraggingDestaquesRef.current = false)}
+              onPointerCancel={() => (isDraggingDestaquesRef.current = false)}
+              onPointerLeave={() => (isDraggingDestaquesRef.current = false)}
+              sx={{
+                px: 2,
+                overflowX: "auto",
+                display: "flex",
+                gap: 1.25,
+                scrollbarWidth: "none",
+                "&::-webkit-scrollbar": { display: "none" },
+
+                scrollSnapType: "x mandatory",
+                scrollPaddingLeft: 16,
+                scrollPaddingRight: 16,
+                WebkitOverflowScrolling: "touch",
+              }}
+            >
+              {destaques.map(({ item, categoria }) => {
+                const categoriaType = inferCategoriaType(categoria, item);
+                const precoLabel = getPrecoLabel(item, categoria, categoriaType);
+                const cardWidth = isMobile ? "calc(100% - 64px)" : 320;
+
+                return (
+                  <Paper
+                    key={String(item._id)}
+                    data-destaque-card="1"
+                    onClick={() => abrirModalProduto(item, categoria)}
+                    elevation={0}
+                    sx={{
+                      scrollSnapAlign: "center",
+                      scrollSnapStop: "always",
+                      flexShrink: 0,
+                      width: cardWidth,
+                      borderRadius: 2.5,
+                      overflow: "hidden",
+                      border: "1px solid rgba(0,0,0,0.06)",
+                      bgcolor: "#fff",
+                      cursor: "pointer",
+                      transition: "transform 120ms ease, box-shadow 120ms ease",
+                      "&:hover": {
+                        transform: "translateY(-1px)",
+                        boxShadow: "0 10px 25px rgba(2,6,23,0.06)",
+                      },
+                      ...(lojaAberta ? {} : { opacity: 0.72, cursor: "not-allowed" }),
+                    }}
+                  >
+                    <Box sx={{ display: "flex", gap: 1.25, p: 1.25 }}>
+                      <Avatar
+                        src={item.imagem || DEFAULT_IMAGE_URL}
+                        alt={item.nome}
+                        variant="rounded"
+                        sx={{
+                          width: 72,
+                          height: 72,
+                          borderRadius: 2,
+                          bgcolor: "#fff",
+                          flexShrink: 0,
+                        }}
+                      />
+
+                      <Box sx={{ minWidth: 0, flex: 1 }}>
+                        <Typography
+                          fontWeight={1000}
+                          sx={{
+                            fontSize: "0.95rem",
+                            lineHeight: 1.2,
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          {item.nome}
+                        </Typography>
+
+                        <Typography
+                          variant="caption"
+                          sx={{
+                            color: "text.secondary",
+                            display: "-webkit-box",
+                            WebkitLineClamp: 2,
+                            WebkitBoxOrient: "vertical",
+                            overflow: "hidden",
+                            mt: 0.3,
+                          }}
+                        >
+                          {item.descricao || categoria?.nome || ""}
+                        </Typography>
+
+                        <Stack direction="row" alignItems="center" spacing={1} sx={{ mt: 0.8 }}>
+                          <Typography variant="body2" color="primary" fontWeight={1000}>
+                            {precoLabel}
+                          </Typography>
+
+                          <Chip
+                            size="small"
+                            icon={<StarIcon sx={{ color: "#111827 !important" }} fontSize="small" />}
+                            label="Destaque"
+                            sx={{
+                              height: 22,
+                              borderRadius: "999px",
+                              bgcolor: "rgba(250,204,21,0.22)",
+                              fontWeight: 900,
+                            }}
+                          />
+                        </Stack>
+
+                        <Box sx={{ mt: 1 }}>
+                          <Button
+                            size="small"
+                            variant="outlined"
+                            startIcon={<AddShoppingCartIcon fontSize="small" />}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              abrirModalProduto(item, categoria);
+                            }}
+                            disabled={!lojaAberta}
+                            sx={{
+                              borderRadius: "999px",
+                              textTransform: "none",
+                              borderColor: "#ff7a3d55",
+                              color: "#ff7a3d",
+                              fontWeight: 900,
+                              "&:hover": { borderColor: "#ff7a3d", backgroundColor: "#fff7f2" },
+                            }}
+                          >
+                            Adicionar
+                          </Button>
+                        </Box>
+                      </Box>
+                    </Box>
+                  </Paper>
+                );
+              })}
+            </Box>
+          </Box>
+        </Box>
+      )}
 
       {/* LISTA */}
       <Container sx={{ py: 2 }} disableGutters>
@@ -707,152 +1061,166 @@ const Publico = () => {
 
               <Divider sx={{ mb: 1 }} />
 
-              {categoria.itens.map((item, index) => (
-                <Box key={item._id || index} sx={{ mb: 1 }}>
-                  <Fade in timeout={220}>
-                    <Paper
-                      elevation={0}
-                      onClick={() =>
-                        abrirModalProduto(item, categoria.tipo || "simple_item")
-                      }
-                      aria-disabled={!lojaAberta}
-                      sx={{
-                        display: "flex",
-                        alignItems: "stretch",
-                        justifyContent: "space-between",
-                        p: 2,
-                        cursor: "pointer",
-                        borderRadius: 0,
-                        bgcolor: "white",
-                        borderBottom: "1px solid #eeeeee",
-                        boxShadow: "none",
-                        transition: "transform 120ms ease, background-color 120ms ease",
-                        "&:hover": { backgroundColor: "#fafafa", transform: "translateY(-1px)" },
-                        ...(lojaAberta ? {} : { opacity: 0.72, cursor: "not-allowed" }),
-                      }}
-                    >
-                      <Box sx={{ flex: 1, pr: 1 }}>
-                        <Stack direction="row" spacing={1} alignItems="center">
-                          <Typography
-                            variant="subtitle1"
-                            fontWeight={900}
-                            sx={{ mb: 0.25, lineHeight: 1.15 }}
-                          >
-                            {item.nome}
-                          </Typography>
+              {categoria.itens.map((item, index) => {
+                const categoriaType = inferCategoriaType(categoria, item);
 
-                          {item.tag && (
-                            <Chip
-                              label={item.tag}
-                              size="small"
-                              color="secondary"
-                              variant="outlined"
-                              sx={{ height: 22 }}
-                            />
-                          )}
-                        </Stack>
-
-                        {item.descricao && (
-                          <Typography
-                            variant="body2"
-                            color="text.secondary"
-                            sx={{
-                              mb: 1,
-                              display: "-webkit-box",
-                              WebkitLineClamp: 2,
-                              WebkitBoxOrient: "vertical",
-                              overflow: "hidden",
-                            }}
-                          >
-                            {item.descricao}
-                          </Typography>
-                        )}
-
-                        <Stack direction="row" spacing={1} alignItems="center" sx={{ mt: 0.25 }}>
-                          <Typography variant="body2" color="primary" fontWeight={900}>
-                            {getPrecoLabel(item)}
-                          </Typography>
-
-                          {(item.adicionais?.length ||
-                            item.complementos?.length ||
-                            item.tiposExtras?.length ||
-                            item.sabores?.length ||
-                            item.bordas?.length) && (
-                            <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 700 }}>
-                              • Personalizável
-                            </Typography>
-                          )}
-                        </Stack>
-
-                        {/* CTA discreto (melhora conversão) */}
-                        <Box sx={{ mt: 1 }}>
-                          <Button
-                            size="small"
-                            variant="outlined"
-                            startIcon={<AddShoppingCartIcon fontSize="small" />}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              abrirModalProduto(item, categoria.tipo || "simple_item");
-                            }}
-                            disabled={!lojaAberta}
-                            sx={{
-                              borderRadius: "999px",
-                              textTransform: "none",
-                              borderColor: "#ff7a3d55",
-                              color: "#ff7a3d",
-                              fontWeight: 900,
-                              "&:hover": { borderColor: "#ff7a3d", backgroundColor: "#fff7f2" },
-                            }}
-                          >
-                            Adicionar
-                          </Button>
-                        </Box>
-                      </Box>
-
-                      <Box
+                return (
+                  <Box key={item._id || index} sx={{ mb: 1 }}>
+                    <Fade in timeout={220}>
+                      <Paper
+                        elevation={0}
+                        onClick={() => abrirModalProduto(item, categoria)}
+                        aria-disabled={!lojaAberta}
                         sx={{
-                          width: 92,
-                          height: 92,
-                          ml: 1.5,
-                          position: "relative",
-                          flexShrink: 0,
+                          display: "flex",
+                          alignItems: "stretch",
+                          justifyContent: "space-between",
+                          p: 2,
+                          cursor: "pointer",
+                          borderRadius: 0,
+                          bgcolor: "white",
+                          borderBottom: "1px solid #eeeeee",
+                          boxShadow: "none",
+                          transition: "transform 120ms ease, background-color 120ms ease",
+                          "&:hover": { backgroundColor: "#fafafa", transform: "translateY(-1px)" },
+                          ...(lojaAberta ? {} : { opacity: 0.72, cursor: "not-allowed" }),
                         }}
                       >
-                        <Avatar
-                          src={item.imagem || DEFAULT_IMAGE_URL}
-                          alt={item.nome}
-                          variant="rounded"
-                          sx={{
-                            width: "100%",
-                            height: "100%",
-                            objectFit: "cover",
-                            borderRadius: 2,
-                            bgcolor: "#fff",
-                          }}
-                        />
-
-                        {!lojaAberta && (
-                          <Box
-                            sx={{
-                              position: "absolute",
-                              inset: 0,
-                              bgcolor: "rgba(0,0,0,0.35)",
-                              borderRadius: 2,
-                              display: "flex",
-                              alignItems: "center",
-                              justifyContent: "center",
-                            }}
-                          >
-                            <Typography variant="caption" sx={{ color: "#fff", fontWeight: 900 }}>
-                              Fechado
+                        <Box sx={{ flex: 1, pr: 1 }}>
+                          <Stack direction="row" spacing={1} alignItems="center">
+                            <Typography
+                              variant="subtitle1"
+                              fontWeight={900}
+                              sx={{ mb: 0.25, lineHeight: 1.15 }}
+                            >
+                              {item.nome}
                             </Typography>
+
+                            {item.tag && (
+                              <Chip
+                                label={item.tag}
+                                size="small"
+                                color="secondary"
+                                variant="outlined"
+                                sx={{ height: 22 }}
+                              />
+                            )}
+
+                            {(item?.destaque === true ||
+                              item?.destaque === "true" ||
+                              item?.destaque === 1 ||
+                              item?.destaque === "1") && (
+                              <Chip
+                                icon={<StarIcon fontSize="small" />}
+                                label="Destaque"
+                                size="small"
+                                variant="outlined"
+                                sx={{ height: 22, fontWeight: 900 }}
+                              />
+                            )}
+                          </Stack>
+
+                          {item.descricao && (
+                            <Typography
+                              variant="body2"
+                              color="text.secondary"
+                              sx={{
+                                mb: 1,
+                                display: "-webkit-box",
+                                WebkitLineClamp: 2,
+                                WebkitBoxOrient: "vertical",
+                                overflow: "hidden",
+                              }}
+                            >
+                              {item.descricao}
+                            </Typography>
+                          )}
+
+                          <Stack direction="row" spacing={1} alignItems="center" sx={{ mt: 0.25 }}>
+                            <Typography variant="body2" color="primary" fontWeight={900}>
+                              {getPrecoLabel(item, categoria, categoriaType)}
+                            </Typography>
+
+                            {(item.adicionais?.length ||
+                              item.complementos?.length ||
+                              item.tiposExtras?.length ||
+                              item.sabores?.length ||
+                              item.bordas?.length) && (
+                              <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 700 }}>
+                                • Personalizável
+                              </Typography>
+                            )}
+                          </Stack>
+
+                          <Box sx={{ mt: 1 }}>
+                            <Button
+                              size="small"
+                              variant="outlined"
+                              startIcon={<AddShoppingCartIcon fontSize="small" />}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                abrirModalProduto(item, categoria);
+                              }}
+                              disabled={!lojaAberta}
+                              sx={{
+                                borderRadius: "999px",
+                                textTransform: "none",
+                                borderColor: "#ff7a3d55",
+                                color: "#ff7a3d",
+                                fontWeight: 900,
+                                "&:hover": { borderColor: "#ff7a3d", backgroundColor: "#fff7f2" },
+                              }}
+                            >
+                              Adicionar
+                            </Button>
                           </Box>
-                        )}
-                      </Box>
-                    </Paper>
-                  </Fade>
-                </Box>
-              ))}
+                        </Box>
+
+                        <Box
+                          sx={{
+                            width: 92,
+                            height: 92,
+                            ml: 1.5,
+                            position: "relative",
+                            flexShrink: 0,
+                          }}
+                        >
+                          <Avatar
+                            src={item.imagem || DEFAULT_IMAGE_URL}
+                            alt={item.nome}
+                            variant="rounded"
+                            sx={{
+                              width: "100%",
+                              height: "100%",
+                              objectFit: "cover",
+                              borderRadius: 2,
+                              bgcolor: "#fff",
+                            }}
+                          />
+
+                          {!lojaAberta && (
+                            <Box
+                              sx={{
+                                position: "absolute",
+                                inset: 0,
+                                bgcolor: "rgba(0,0,0,0.35)",
+                                borderRadius: 2,
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                              }}
+                            >
+                              <Typography variant="caption" sx={{ color: "#fff", fontWeight: 900 }}>
+                                Fechado
+                              </Typography>
+                            </Box>
+                          )}
+                        </Box>
+                      </Paper>
+                    </Fade>
+                  </Box>
+                );
+              })}
             </Box>
           ))
         )}
@@ -862,12 +1230,15 @@ const Publico = () => {
       {produtoSelecionado && (
         <ModalProduto
           open={modalAberto}
-          onClose={() => setModalAberto(false)}
+          onClose={() => {
+            setModalAberto(false);
+            // quando fecha modal, autoplay volta sozinho pelo useEffect
+          }}
           produto={produtoSelecionado}
         />
       )}
 
-      {/* Bottom nav (sempre ativo — sem value/onChange) */}
+      {/* Bottom nav */}
       <Paper
         elevation={10}
         sx={{ position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 1000 }}

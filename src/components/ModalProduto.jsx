@@ -1,3 +1,4 @@
+// src/components/ModalProduto.jsx
 import React, { useState, useEffect, useMemo } from "react";
 import {
   Dialog,
@@ -25,6 +26,20 @@ import RemoveIcon from "@mui/icons-material/Remove";
 const DEFAULT_IMAGE_URL =
   "https://cdn-icons-png.flaticon.com/512/1404/1404945.png";
 
+function formatBRL(value) {
+  const num = Number(value || 0);
+  return num.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+}
+
+function isPizzaProduto(produto) {
+  if (!produto) return false;
+  if (produto.categoriaType === "pizza") return true;
+  if (produto.pizzaMultisabor === true) return true;
+  if (produto.permiteSabores === true) return true;
+  if ((produto.saboresDisponiveis || []).length > 0) return true;
+  return false;
+}
+
 const ModalProduto = ({ open, onClose, produto }) => {
   const [saboresSelecionados, setSaboresSelecionados] = useState([]);
   const [bordaSelecionada, setBordaSelecionada] = useState("nenhum");
@@ -35,6 +50,18 @@ const ModalProduto = ({ open, onClose, produto }) => {
   const [quantidade, setQuantidade] = useState(1);
   const [validationError, setValidationError] = useState("");
   const [showSnackbar, setShowSnackbar] = useState(false);
+
+  const isPizza = isPizzaProduto(produto);
+
+  // maxSabores: se multi, padrão 2; se pizza tradicional, padrão 1
+  const maxSabores = useMemo(() => {
+    if (!produto) return 1;
+    if (Number.isFinite(Number(produto.maxSabores)) && Number(produto.maxSabores) > 0) {
+      return Number(produto.maxSabores);
+    }
+    if (produto.pizzaMultisabor) return 2;
+    return 1;
+  }, [produto]);
 
   // Reset de estado sempre que abrir um produto novo
   useEffect(() => {
@@ -50,7 +77,7 @@ const ModalProduto = ({ open, onClose, produto }) => {
     setValidationError("");
 
     // Auto selecionar sabor único
-    if (produto?.saboresDisponiveis?.length === 1) {
+    if (isPizza && produto?.saboresDisponiveis?.length === 1) {
       setSaboresSelecionados([produto.saboresDisponiveis[0].nome]);
     }
 
@@ -70,23 +97,27 @@ const ModalProduto = ({ open, onClose, produto }) => {
       }
     });
     setTiposExtrasSelecionados(autoSelectExtras);
-  }, [open, produto]);
+  }, [open, produto, isPizza]);
 
   // Cálculo do preço total (memoizado)
   const precoTotal = useMemo(() => {
     if (!produto) return 0;
 
-    let total = produto.precoBase || 0;
+    let total = Number(produto.precoBase || 0);
 
-    // PIZZA: cálculo por sabores
-    if (produto.categoriaType === "pizza" && saboresSelecionados.length > 0) {
-      const precos = saboresSelecionados.map((nome) => {
-        const sabor = produto.saboresDisponiveis?.find((s) => s.nome === nome);
-        return parseFloat(sabor?.preco || 0);
-      });
+    // ✅ PIZZA: cálculo por sabores (ignora "somar sabores")
+    if (isPizza && saboresSelecionados.length > 0) {
+      const precos = saboresSelecionados
+        .map((nome) => {
+          const sabor = produto.saboresDisponiveis?.find((s) => s.nome === nome);
+          return Number(sabor?.preco || 0);
+        })
+        .filter((v) => Number.isFinite(v));
 
-      if (precos.length) {
-        if (produto.calculoPrecoPor === "media") {
+      if (precos.length > 0) {
+        const regra = produto.calculoPrecoPor || "maior";
+
+        if (regra === "media") {
           const soma = precos.reduce((acc, v) => acc + v, 0);
           total = soma / precos.length;
         } else {
@@ -100,7 +131,7 @@ const ModalProduto = ({ open, onClose, produto }) => {
       const borda = produto.bordasDisponiveis?.find(
         (b) => b.nome === bordaSelecionada
       );
-      total += parseFloat(borda?.preco || 0);
+      total += Number(borda?.preco || 0);
     }
 
     // Adicional
@@ -108,24 +139,20 @@ const ModalProduto = ({ open, onClose, produto }) => {
       const adicional = produto.adicionais?.find(
         (a) => a.nome === adicionalSelecionado
       );
-      total += parseFloat(adicional?.preco || 0);
+      total += Number(adicional?.preco || 0);
     }
 
     // Complementos
     complementosSelecionados.forEach((nome) => {
       const comp = produto.complementos?.find((c) => c.nome === nome);
-      total += parseFloat(comp?.preco || 0);
+      total += Number(comp?.preco || 0);
     });
 
     // Tipos Extras
     Object.entries(tiposExtrasSelecionados).forEach(([, itens]) => {
       if (Array.isArray(itens)) {
         for (const item of itens) {
-          const preco =
-            typeof item?.preco === "number"
-              ? item.preco
-              : parseFloat(item?.preco || 0);
-          total += preco;
+          total += Number(item?.preco || 0);
         }
       }
     });
@@ -134,6 +161,7 @@ const ModalProduto = ({ open, onClose, produto }) => {
     return Number.isFinite(total) ? total : 0;
   }, [
     produto,
+    isPizza,
     saboresSelecionados,
     bordaSelecionada,
     adicionalSelecionado,
@@ -144,19 +172,17 @@ const ModalProduto = ({ open, onClose, produto }) => {
 
   if (!produto) return null;
 
-  // Validação com mensagens mais específicas
+  // Validação
   const validate = () => {
-    if (produto.categoriaType === "pizza") {
-      const requiredCount = produto.maxSabores || 2;
+    if (isPizza) {
+      const saboresDisp = produto.saboresDisponiveis || [];
 
-      if (produto.saboresDisponiveis?.length > 1) {
-        if (saboresSelecionados.length !== requiredCount) {
-          return `Selecione exatamente ${requiredCount} sabor(es).`;
+      // se tem mais de 1 sabor disponível, exige a regra do maxSabores
+      if (saboresDisp.length > 1) {
+        if (saboresSelecionados.length !== maxSabores) {
+          return `Selecione exatamente ${maxSabores} sabor(es).`;
         }
-      } else if (
-        produto.saboresDisponiveis?.length === 1 &&
-        saboresSelecionados.length !== 1
-      ) {
+      } else if (saboresDisp.length === 1 && saboresSelecionados.length !== 1) {
         return "Selecione o sabor da pizza.";
       }
     }
@@ -167,16 +193,10 @@ const ModalProduto = ({ open, onClose, produto }) => {
       if (tipo.obrigatorio && selecionados.length === 0) {
         return `Selecione pelo menos uma opção em "${tipo.nome}".`;
       }
-      if (
-        tipo.minimoSelecionados &&
-        selecionados.length < tipo.minimoSelecionados
-      ) {
+      if (tipo.minimoSelecionados && selecionados.length < tipo.minimoSelecionados) {
         return `Selecione pelo menos ${tipo.minimoSelecionados} opção(ões) em "${tipo.nome}".`;
       }
-      if (
-        tipo.maximoSelecionados &&
-        selecionados.length > tipo.maximoSelecionados
-      ) {
+      if (tipo.maximoSelecionados && selecionados.length > tipo.maximoSelecionados) {
         return `Você pode escolher no máximo ${tipo.maximoSelecionados} opção(ões) em "${tipo.nome}".`;
       }
     }
@@ -191,16 +211,20 @@ const ModalProduto = ({ open, onClose, produto }) => {
       return;
     }
 
-    const valorBase = produto.precoBase || 0;
-    const precoFinalItem = precoTotal;
-    const precoUnitarioBase = valorBase;
-
     const pedido = {
       produtoId: produto._id,
       nome: produto.nome,
       imagem: produto.imagem,
-      categoriaType: produto.categoriaType,
+      categoriaType: isPizza ? "pizza" : (produto.categoriaType || "simple_item"),
+
+      // pizza
+      pizzaMultisabor: Boolean(produto.pizzaMultisabor),
+      calculoPrecoPor: produto.calculoPrecoPor || "maior",
+      maxSabores,
+
       saboresSelecionados,
+
+      // borda/adicional/complementos
       bordaSelecionada:
         bordaSelecionada === "nenhum"
           ? null
@@ -213,11 +237,14 @@ const ModalProduto = ({ open, onClose, produto }) => {
         produto.complementos?.filter((c) =>
           complementosSelecionados.includes(c.nome)
         ) || [],
+
       tiposExtrasSelecionados,
       observacao,
       quantidade,
-      precoUnitario: precoUnitarioBase,
-      precoTotal: precoFinalItem,
+
+      // preços
+      precoUnitario: Number(produto.precoBase || 0),
+      precoTotal: Number(precoTotal || 0),
     };
 
     const carrinhoAtual = JSON.parse(localStorage.getItem("carrinho")) || [];
@@ -228,27 +255,23 @@ const ModalProduto = ({ open, onClose, produto }) => {
     onClose();
   };
 
-  const maxSabores = produto.maxSabores || 2;
+  const saboresDisp = produto.saboresDisponiveis || [];
   const isPizzaMultiSabor =
-    produto.categoriaType === "pizza" &&
-    produto.saboresDisponiveis?.length > 1 &&
-    maxSabores > 1;
+    isPizza && saboresDisp.length > 1 && maxSabores > 1;
 
-  const mostrarPrecoBasePizza =
-    produto.categoriaType === "pizza" &&
-    produto.saboresDisponiveis?.length > 1;
+  const mostrarPrecoBasePizza = isPizza && saboresDisp.length > 1;
 
   const precoPizzaAPartir = mostrarPrecoBasePizza
     ? (() => {
-        const min = produto.saboresDisponiveis.reduce(
-          (menor, s) =>
-            Math.min(menor, parseFloat(s.preco || Number.POSITIVE_INFINITY)),
-          Number.POSITIVE_INFINITY
-        );
-        if (!isFinite(min)) return produto.precoBase || 0;
+        const min = saboresDisp.reduce((menor, s) => {
+          const p = Number(s.preco || Number.POSITIVE_INFINITY);
+          return Math.min(menor, p);
+        }, Number.POSITIVE_INFINITY);
+
+        if (!isFinite(min)) return Number(produto.precoBase || 0);
         return min;
       })()
-    : produto.precoBase || 0;
+    : Number(produto.precoBase || 0);
 
   return (
     <>
@@ -290,7 +313,7 @@ const ModalProduto = ({ open, onClose, produto }) => {
         <Divider />
 
         <DialogContent sx={{ pt: 2 }}>
-          {/* Imagem do produto */}
+          {/* Imagem */}
           <Box
             sx={{
               mb: 2,
@@ -312,25 +335,21 @@ const ModalProduto = ({ open, onClose, produto }) => {
             />
           </Box>
 
-          {/* Preço base / a partir de */}
+          {/* Descrição + preço base */}
           <Box sx={{ mb: 2 }}>
-            <Typography
-              variant="body2"
-              color="text.secondary"
-              sx={{ mb: 0.5 }}
-            >
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>
               {produto.descricao}
             </Typography>
 
             <Stack direction="row" alignItems="baseline" spacing={1}>
               <Typography variant="h6" fontWeight={700} color="primary">
                 {mostrarPrecoBasePizza ? "a partir de " : ""}
-                R$ {precoPizzaAPartir.toFixed(2)}
+                {formatBRL(precoPizzaAPartir)}
               </Typography>
             </Stack>
           </Box>
 
-          {/* Alertas de validação */}
+          {/* Alertas */}
           {validationError && (
             <Alert
               severity="warning"
@@ -342,88 +361,62 @@ const ModalProduto = ({ open, onClose, produto }) => {
           )}
 
           {/* Sabores */}
-          {produto.categoriaType === "pizza" &&
-            produto.saboresDisponiveis?.length > 0 && (
-              <Box sx={{ mt: 2 }}>
-                <Typography variant="subtitle1" fontWeight="bold" gutterBottom>
-                  Sabores{" "}
-                  {isPizzaMultiSabor
-                    ? `(escolha exatamente ${maxSabores})`
-                    : ""}
-                </Typography>
+          {isPizza && saboresDisp.length > 0 && (
+            <Box sx={{ mt: 2 }}>
+              <Typography variant="subtitle1" fontWeight="bold" gutterBottom>
+                Sabores {isPizzaMultiSabor ? `(escolha exatamente ${maxSabores})` : ""}
+              </Typography>
 
-                {/* Se for só 1 sabor possível ou maxSabores = 1 → Radio */}
-                {produto.saboresDisponiveis.length === 1 ||
-                maxSabores === 1 ? (
-                  <RadioGroup
-                    value={saboresSelecionados[0] || ""}
-                    onChange={(e) =>
-                      setSaboresSelecionados(
-                        e.target.value ? [e.target.value] : []
-                      )
-                    }
-                  >
-                    {produto.saboresDisponiveis.map((s, i) => (
+              {/* se maxSabores=1 ou só 1 sabor -> radio */}
+              {saboresDisp.length === 1 || maxSabores === 1 ? (
+                <RadioGroup
+                  value={saboresSelecionados[0] || ""}
+                  onChange={(e) =>
+                    setSaboresSelecionados(e.target.value ? [e.target.value] : [])
+                  }
+                >
+                  {saboresDisp.map((s, i) => (
+                    <FormControlLabel
+                      key={i}
+                      value={s.nome}
+                      control={<Radio />}
+                      label={s.preco ? `${s.nome} (${formatBRL(s.preco)})` : s.nome}
+                    />
+                  ))}
+                </RadioGroup>
+              ) : (
+                <Box display="flex" flexDirection="column">
+                  {saboresDisp.map((s, i) => {
+                    const checked = saboresSelecionados.includes(s.nome);
+                    const desabilitado =
+                      !checked && saboresSelecionados.length >= maxSabores && maxSabores > 0;
+
+                    return (
                       <FormControlLabel
                         key={i}
-                        value={s.nome}
-                        control={<Radio />}
-                        label={
-                          s.preco
-                            ? `${s.nome} (+R$ ${parseFloat(
-                                s.preco
-                              ).toFixed(2)})`
-                            : s.nome
+                        control={
+                          <Checkbox
+                            checked={checked}
+                            disabled={desabilitado}
+                            onChange={() => {
+                              if (checked) {
+                                setSaboresSelecionados((prev) =>
+                                  prev.filter((n) => n !== s.nome)
+                                );
+                              } else if (saboresSelecionados.length < maxSabores) {
+                                setSaboresSelecionados((prev) => [...prev, s.nome]);
+                              }
+                            }}
+                          />
                         }
+                        label={s.preco ? `${s.nome} (${formatBRL(s.preco)})` : s.nome}
                       />
-                    ))}
-                  </RadioGroup>
-                ) : (
-                  // multi-sabor com checkbox
-                  <Box display="flex" flexDirection="column">
-                    {produto.saboresDisponiveis.map((s, i) => {
-                      const checked = saboresSelecionados.includes(s.nome);
-                      const desabilitado =
-                        !checked &&
-                        saboresSelecionados.length >= maxSabores &&
-                        maxSabores > 0;
-                      return (
-                        <FormControlLabel
-                          key={i}
-                          control={
-                            <Checkbox
-                              checked={checked}
-                              disabled={desabilitado}
-                              onChange={() => {
-                                if (checked) {
-                                  setSaboresSelecionados((prev) =>
-                                    prev.filter((n) => n !== s.nome)
-                                  );
-                                } else if (
-                                  saboresSelecionados.length < maxSabores
-                                ) {
-                                  setSaboresSelecionados((prev) => [
-                                    ...prev,
-                                    s.nome,
-                                  ]);
-                                }
-                              }}
-                            />
-                          }
-                          label={
-                            s.preco
-                              ? `${s.nome} (+R$ ${parseFloat(
-                                  s.preco
-                                ).toFixed(2)})`
-                              : s.nome
-                          }
-                        />
-                      );
-                    })}
-                  </Box>
-                )}
-              </Box>
-            )}
+                    );
+                  })}
+                </Box>
+              )}
+            </Box>
+          )}
 
           {/* Bordas */}
           {produto.bordasDisponiveis?.length > 0 && (
@@ -435,17 +428,13 @@ const ModalProduto = ({ open, onClose, produto }) => {
                 value={bordaSelecionada}
                 onChange={(e) => setBordaSelecionada(e.target.value)}
               >
-                <FormControlLabel
-                  value="nenhum"
-                  control={<Radio />}
-                  label="Sem borda"
-                />
+                <FormControlLabel value="nenhum" control={<Radio />} label="Sem borda" />
                 {produto.bordasDisponiveis.map((b, i) => (
                   <FormControlLabel
                     key={i}
                     value={b.nome}
                     control={<Radio />}
-                    label={`${b.nome} (+R$ ${parseFloat(b.preco).toFixed(2)})`}
+                    label={`${b.nome} (+${formatBRL(b.preco)})`}
                   />
                 ))}
               </RadioGroup>
@@ -462,27 +451,22 @@ const ModalProduto = ({ open, onClose, produto }) => {
                 value={adicionalSelecionado}
                 onChange={(e) => setAdicionalSelecionado(e.target.value)}
               >
-                <FormControlLabel
-                  value="nenhum"
-                  control={<Radio />}
-                  label="Sem adicional"
-                />
+                <FormControlLabel value="nenhum" control={<Radio />} label="Sem adicional" />
                 {produto.adicionais.map((a, i) => (
                   <FormControlLabel
                     key={i}
                     value={a.nome}
                     control={<Radio />}
-                    label={`${a.nome} (+R$ ${parseFloat(a.preco).toFixed(2)})`}
+                    label={`${a.nome} (+${formatBRL(a.preco)})`}
                   />
                 ))}
               </RadioGroup>
             </Box>
           )}
 
-          {/* Tipos de extras dinâmicos */}
+          {/* Tipos extras */}
           {produto.tiposExtras?.map((tipo, idx) => {
-            if (!Array.isArray(tipo.itens) || tipo.itens.length === 0)
-              return null;
+            if (!Array.isArray(tipo.itens) || tipo.itens.length === 0) return null;
 
             const selecionados = tiposExtrasSelecionados[tipo.nome] || [];
 
@@ -499,9 +483,7 @@ const ModalProduto = ({ open, onClose, produto }) => {
                   <RadioGroup
                     value={selecionados[0]?.nome || ""}
                     onChange={(e) => {
-                      const item = tipo.itens.find(
-                        (i) => i.nome === e.target.value
-                      );
+                      const item = tipo.itens.find((i) => i.nome === e.target.value);
                       setTiposExtrasSelecionados((prev) => ({
                         ...prev,
                         [tipo.nome]: item ? [item] : [],
@@ -509,29 +491,21 @@ const ModalProduto = ({ open, onClose, produto }) => {
                     }}
                   >
                     {!tipo.obrigatorio && (
-                      <FormControlLabel
-                        value=""
-                        control={<Radio />}
-                        label="Nenhum"
-                      />
+                      <FormControlLabel value="" control={<Radio />} label="Nenhum" />
                     )}
                     {tipo.itens.map((item, i) => (
                       <FormControlLabel
                         key={i}
                         value={item.nome}
                         control={<Radio />}
-                        label={`${item.nome} (+R$ ${parseFloat(
-                          item.preco
-                        ).toFixed(2)})`}
+                        label={`${item.nome} (+${formatBRL(item.preco)})`}
                       />
                     ))}
                   </RadioGroup>
                 ) : (
                   <Box display="flex" flexDirection="column" gap={1}>
                     {tipo.itens.map((item, i) => {
-                      const isChecked = selecionados.some(
-                        (s) => s.nome === item.nome
-                      );
+                      const isChecked = selecionados.some((s) => s.nome === item.nome);
                       const disabled =
                         !isChecked &&
                         tipo.maximoSelecionados !== undefined &&
@@ -546,9 +520,7 @@ const ModalProduto = ({ open, onClose, produto }) => {
                               disabled={disabled}
                               onChange={() => {
                                 const novos = isChecked
-                                  ? selecionados.filter(
-                                      (s) => s.nome !== item.nome
-                                    )
+                                  ? selecionados.filter((s) => s.nome !== item.nome)
                                   : [...selecionados, item];
                                 setTiposExtrasSelecionados((prev) => ({
                                   ...prev,
@@ -557,9 +529,7 @@ const ModalProduto = ({ open, onClose, produto }) => {
                               }}
                             />
                           }
-                          label={`${item.nome} (+R$ ${parseFloat(
-                            item.preco
-                          ).toFixed(2)})`}
+                          label={`${item.nome} (+${formatBRL(item.preco)})`}
                         />
                       );
                     })}
@@ -569,7 +539,7 @@ const ModalProduto = ({ open, onClose, produto }) => {
             );
           })}
 
-          {/* Complementos simples (se existir no schema) */}
+          {/* Complementos */}
           {produto.complementos?.length > 0 && (
             <Box sx={{ mt: 3 }}>
               <Typography fontWeight="bold" gutterBottom>
@@ -586,16 +556,12 @@ const ModalProduto = ({ open, onClose, produto }) => {
                           checked={checked}
                           onChange={() => {
                             setComplementosSelecionados((prev) =>
-                              checked
-                                ? prev.filter((n) => n !== c.nome)
-                                : [...prev, c.nome]
+                              checked ? prev.filter((n) => n !== c.nome) : [...prev, c.nome]
                             );
                           }}
                         />
                       }
-                      label={`${c.nome} (+R$ ${parseFloat(
-                        c.preco
-                      ).toFixed(2)})`}
+                      label={`${c.nome} (+${formatBRL(c.preco)})`}
                     />
                   );
                 })}
@@ -632,17 +598,14 @@ const ModalProduto = ({ open, onClose, produto }) => {
                 <RemoveIcon />
               </IconButton>
               <Typography>{quantidade}</Typography>
-              <IconButton
-                size="small"
-                onClick={() => setQuantidade((q) => q + 1)}
-              >
+              <IconButton size="small" onClick={() => setQuantidade((q) => q + 1)}>
                 <AddIcon />
               </IconButton>
             </Box>
           </Box>
         </DialogContent>
 
-        {/* Ações fixas com total */}
+        {/* Ações */}
         <DialogActions
           sx={{
             flexDirection: "column",
@@ -657,27 +620,17 @@ const ModalProduto = ({ open, onClose, produto }) => {
             zIndex: 2,
           }}
         >
-          <Box
-            mb={1}
-            display="flex"
-            justifyContent="space-between"
-            alignItems="center"
-          >
+          <Box mb={1} display="flex" justifyContent="space-between" alignItems="center">
             <Typography variant="subtitle2" color="text.secondary">
               Total
             </Typography>
             <Typography variant="h6" fontWeight="bold" color="primary">
-              R$ {precoTotal.toFixed(2)}
+              {formatBRL(precoTotal)}
             </Typography>
           </Box>
 
           <Box display="flex" gap={1}>
-            <Button
-              fullWidth
-              onClick={onClose}
-              variant="outlined"
-              color="inherit"
-            >
+            <Button fullWidth onClick={onClose} variant="outlined" color="inherit">
               Cancelar
             </Button>
             <Button
