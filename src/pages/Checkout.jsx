@@ -22,7 +22,6 @@ import {
   Grid,
   Chip,
   IconButton,
-  InputAdornment,
   Collapse,
   List,
   ListItem,
@@ -42,7 +41,6 @@ import RadioGroup from "@mui/material/RadioGroup";
 import FormControlLabel from "@mui/material/FormControlLabel";
 import CreditCardIcon from "@mui/icons-material/CreditCard";
 import PixIcon from "@mui/icons-material/Pix";
-
 import ContentCopyIcon from "@mui/icons-material/ContentCopy";
 import CheckCircleIcon from "@mui/icons-material/CheckCircle";
 import HourglassBottomIcon from "@mui/icons-material/HourglassBottom";
@@ -53,9 +51,14 @@ import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import ExpandLessIcon from "@mui/icons-material/ExpandLess";
 import ReceiptLongIcon from "@mui/icons-material/ReceiptLong";
 
+// ✅ Mercado Pago Brick
+import { initMercadoPago, CardPayment } from "@mercadopago/sdk-react";
+
 const API_URL = import.meta.env.VITE_API_URL || "https://api.movyo.delivery/api";
 const MAPBOX_TOKEN =
   "pk.eyJ1IjoiaGVsaW93OSIsImEiOiJjbTljNDRnazgwZ3BmMmxwdW9nbWk1c3ZmIn0.NR96Um-T_CqTI3jDb7c2OQ";
+
+const MP_PUBLIC_KEY = import.meta.env.VITE_MP_PUBLIC_KEY || ""; // ✅ coloque no .env
 
 // sem pizza 🙏
 const DEFAULT_IMAGE_URL = "";
@@ -63,12 +66,35 @@ const DEFAULT_IMAGE_URL = "";
 // ✅ ajuste aqui se sua rota pública de status for diferente
 const PIX_STATUS_PATH = "/publico/pix/status";
 
-const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
+// ✅ status público do Mercado Pago (pra habilitar Pix) — você já usa
+const MP_STATUS_PUBLICO_PATH = "/mercadopago/status-publico";
 
 const money = (v) => {
   const num = Number(v || 0);
   return num.toFixed(2);
 };
+
+/**
+ * ✅ INIT MERCADO PAGO APENAS 1 VEZ (resolve Secure Fields "failed after 3 tries")
+ * - Evita reinit no StrictMode
+ * - Evita reinit por navegação/redirect
+ */
+function initMpOnce() {
+  if (typeof window === "undefined") return false;
+  if (!MP_PUBLIC_KEY) return false;
+
+  // trava para não inicializar 2x
+  if (window.__MP_INITED__) return true;
+
+  try {
+    initMercadoPago(MP_PUBLIC_KEY, { locale: "pt-BR" });
+    window.__MP_INITED__ = true;
+    return true;
+  } catch (e) {
+    console.error("Erro initMercadoPago:", e);
+    return false;
+  }
+}
 
 const Checkout = () => {
   const navigate = useNavigate();
@@ -95,7 +121,6 @@ const Checkout = () => {
   const [carregando, setCarregando] = useState(false);
   const [clienteCarregado, setClienteCarregado] = useState(false);
   const [frete, setFrete] = useState(0);
-  const [coordenadasCliente, setCoordenadasCliente] = useState(null);
 
   // PIX
   const [qrCodeUrl, setQrCodeUrl] = useState("");
@@ -114,6 +139,10 @@ const Checkout = () => {
 
   const [formaPagamento, setFormaPagamento] = useState("Pix");
 
+  // Mercado Pago (habilitar Pix só se loja estiver conectada)
+  const [mpConectado, setMpConectado] = useState(false);
+  const [mpCarregando, setMpCarregando] = useState(true);
+
   // RESUMO PRÉ-PAGAMENTO (CARRINHO)
   const [itensPreview, setItensPreview] = useState([]);
   const [subtotalPreview, setSubtotalPreview] = useState(0);
@@ -123,7 +152,7 @@ const Checkout = () => {
   const [resumoOpen, setResumoOpen] = useState(true);
   const [confirmEditarPix, setConfirmEditarPix] = useState(false);
 
-  // ERROS / FEEDBACK
+  // FEEDBACK
   const [cepErro, setCepErro] = useState(false);
   const [cepHelper, setCepHelper] = useState("");
   const [snackbar, setSnackbar] = useState({
@@ -132,7 +161,7 @@ const Checkout = () => {
     severity: "info",
   });
 
-  // ✅ normaliza restaurante do localStorage
+  // normaliza restaurante do localStorage
   const restauranteRaw = JSON.parse(localStorage.getItem("restauranteSelecionado") || "null");
   const restaurante = restauranteRaw?.restaurante ?? restauranteRaw;
 
@@ -179,21 +208,26 @@ const Checkout = () => {
   };
 
   const calcularValorItem = (item) => {
-    let total = (item.precoUnitario || 0) * (item.quantidade || 1);
+    // ✅ prioriza precoTotal se já vier pronto do carrinho
+    const qtd = Number(item.quantidade || 1);
+    const precoTotal = Number(item.precoTotal || 0);
+    if (precoTotal > 0) return precoTotal;
 
-    if (item.bordaSelecionada) total += parseFloat(item.bordaSelecionada.preco || 0) * (item.quantidade || 1);
-    if (item.adicionalSelecionado) total += parseFloat(item.adicionalSelecionado.preco || 0) * (item.quantidade || 1);
+    let total = (Number(item.precoUnitario || 0) || 0) * qtd;
+
+    if (item.bordaSelecionada) total += Number(item.bordaSelecionada.preco || 0) * qtd;
+    if (item.adicionalSelecionado) total += Number(item.adicionalSelecionado.preco || 0) * qtd;
 
     if (Array.isArray(item.complementosSelecionados)) {
       item.complementosSelecionados.forEach((c) => {
-        total += parseFloat(c.preco || 0) * (item.quantidade || 1);
+        total += Number(c.preco || 0) * qtd;
       });
     }
 
     if (item.tiposExtrasSelecionados) {
       Object.values(item.tiposExtrasSelecionados).forEach((itens) => {
-        itens.forEach((extra) => {
-          total += parseFloat(extra?.preco || 0) * (item.quantidade || 1);
+        (itens || []).forEach((extra) => {
+          total += Number(extra?.preco || 0) * qtd;
         });
       });
     }
@@ -202,6 +236,16 @@ const Checkout = () => {
   };
 
   const telLimpo = useMemo(() => telefone.replace(/\D/g, ""), [telefone]);
+
+  // ========= INIT MP (UMA VEZ) =========
+  const mpInited = useMemo(() => initMpOnce(), []);
+
+  // ✅ Secure Fields exigem HTTPS (ou localhost)
+  const isHttpsOk = useMemo(() => {
+    if (typeof window === "undefined") return false;
+    const isLocal = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
+    return window.location.protocol === "https:" || isLocal;
+  }, []);
 
   // ========= CARRINHO + RESTAURA PIX PENDENTE =========
 
@@ -212,7 +256,7 @@ const Checkout = () => {
     const subtotal = carrinho.reduce((acc, item) => acc + calcularValorItem(item), 0);
     setSubtotalPreview(subtotal);
 
-    // ✅ restaura PIX pendente (se existir)
+    // restaura PIX pendente (se existir)
     try {
       const pend = JSON.parse(localStorage.getItem("pix_pendente") || "null");
       if (pend?._id && (pend?.qrCodeTexto || pend?.qrCodeUrl)) {
@@ -227,14 +271,45 @@ const Checkout = () => {
         setPixStatus(pend.pixStatus || "pending");
         setFormaPagamento("Pix");
       }
-    } catch { }
+    } catch {}
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // ========= MERCADO PAGO STATUS (habilitar Pix) =========
+  useEffect(() => {
+    const fetchMpStatus = async () => {
+      try {
+        if (!restaurante?._id) {
+          setMpConectado(false);
+          setMpCarregando(false);
+          return;
+        }
+
+        const { data } = await axios.get(`${API_URL}${MP_STATUS_PUBLICO_PATH}/${restaurante._id}`);
+        setMpConectado(!!data?.conectado);
+      } catch {
+        setMpConectado(false);
+      } finally {
+        setMpCarregando(false);
+      }
+    };
+
+    fetchMpStatus();
+  }, [restaurante?._id]);
+
+  // se MP não estiver conectado, força formaPagamento pra cartão
+  useEffect(() => {
+    if (!mpCarregando && !mpConectado && formaPagamento === "Pix") {
+      setFormaPagamento("CartaoCredito");
+    }
+  }, [mpCarregando, mpConectado, formaPagamento]);
 
   // ========= REGRA: TRAVAR FORMULÁRIO SÓ QUANDO PIX GERADO E PENDENTE =========
 
   const isPix = (formaPagamento || "").toLowerCase() === "pix";
+  const isCard = (formaPagamento || "").toLowerCase() === "cartaocredito";
   const pixPendente = Boolean(resumoPedido?._id) && isPix && Boolean(qrCodeTexto || qrCodeUrl);
-  const travarFormulario = pixPendente;
+  const travarFormulario = pixPendente || carregando;
 
   // ========= BUSCAR CLIENTE =========
 
@@ -294,7 +369,6 @@ const Checkout = () => {
 
     if (data?.features?.length > 0) {
       const [lng, lat] = data.features[0].center;
-      setCoordenadasCliente({ lng, lat });
       return [lng, lat];
     }
     throw new Error("Endereço não localizado");
@@ -358,7 +432,6 @@ const Checkout = () => {
       }
     };
 
-    // não recalcula frete enquanto Pix pendente (evita “piscar” resumo)
     if (!pixPendente) calcularFreteEndereco();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [endereco.rua, endereco.numero, endereco.bairro, endereco.cidade, endereco.estado, restaurante?._id]);
@@ -369,7 +442,6 @@ const Checkout = () => {
     setEnderecoSelecionado(index);
     setEndereco(enderecosCliente[index]);
     setFrete(0);
-    setCoordenadasCliente(null);
   };
 
   const adicionarEnderecoNovo = () => {
@@ -385,7 +457,6 @@ const Checkout = () => {
       complemento: "",
     });
     setFrete(0);
-    setCoordenadasCliente(null);
   };
 
   // ========= PIX =========
@@ -418,7 +489,6 @@ const Checkout = () => {
           return;
         }
 
-        // timeout suave
         if (Date.now() - startedAt > 5 * 60 * 1000) {
           limparPollingPix();
           setVerificandoPix(false);
@@ -439,142 +509,6 @@ const Checkout = () => {
     setVerificandoPix(false);
     toast("info", "Você pode editar os dados e gerar um novo Pix.");
   };
-
-  // ========= FINALIZAR =========
-
-  const finalizarPedido = async () => {
-    const carrinho = JSON.parse(localStorage.getItem("carrinho") || "[]");
-
-    if (!restaurante?._id) {
-      toast("error", "Restaurante não identificado. Volte para a vitrine.");
-      return;
-    }
-
-    if (telLimpo.length < 10 || !nome?.trim() || !endereco.rua?.trim() || carrinho.length === 0) {
-      toast("warning", "Preencha telefone, nome, endereço de entrega e tenha itens no carrinho.");
-      return;
-    }
-
-    setCarregando(true);
-    try {
-      const valorProdutos = carrinho.reduce((acc, item) => acc + calcularValorItem(item), 0);
-
-      const [lng, lat] = await geocodificarEndereco();
-      const valorFrete = await calcularFrete(lng, lat);
-      const valorTotal = valorProdutos + valorFrete;
-
-      setFrete(valorFrete);
-
-      const carrinhoFormatado = carrinho.map((item) => ({
-        ...item,
-        amount: Math.round((calcularValorItem(item) || 0) * 100),
-        description: item.nome,
-        quantity: item.quantidade,
-      }));
-
-      const freteItem = {
-        nome: "Entrega",
-        quantidade: 1,
-        precoUnitario: valorFrete,
-        precoTotal: valorFrete,
-        amount: Math.round(valorFrete * 100),
-        description: "Entrega",
-        quantity: 1,
-      };
-
-      const carrinhoComFrete = [...carrinhoFormatado, freteItem];
-
-      const resp = await axios.post(`${API_URL}/pedidos/`, {
-        itens: carrinhoComFrete,
-        telefoneCliente: telLimpo,
-        nomeCliente: nome,
-        enderecoCliente: `${endereco.rua}, ${endereco.numero} - ${endereco.bairro}`,
-        residenciaNumero: endereco.numero,
-        residenciaComplemento: endereco.complemento || "",
-        residenciaReferencia: "",
-        residenciaBairro: endereco.bairro,
-        residenciaCep: endereco.cep,
-        latitudeCliente: lat,
-        longitudeCliente: lng,
-        valorTotal,
-        restaurante: restaurante._id,
-        formadePagamento: formaPagamento,
-        origem: "vitrine",
-        valorFrete,
-      });
-
-      // PIX
-      if ((formaPagamento || "").toLowerCase() === "pix") {
-        const pedidoId = resp.data?.pedidoId || resp.data?._id || null;
-
-        const qrText = resp.data?.pix_qr_code || resp.data?.qr_code || "";
-        const qrBase64 =
-          resp.data?.pix_qr_code_base64 || // ✅ nome do seu backend
-          resp.data?.qr_code_base64 ||
-          resp.data?.pix_qr_code_url ||
-          resp.data?.qr_code_url ||
-          "";
-
-        if (!pedidoId) {
-          toast("error", "Pedido criado, mas não recebi o ID do pedido no retorno.");
-          return;
-        }
-        if (!qrText && !qrBase64) {
-          toast("error", "Pedido criado, mas não recebi o QR Code Pix.");
-          return;
-        }
-
-        setResumoPedido({
-          itens: carrinhoComFrete,
-          total: valorTotal,
-          frete: valorFrete,
-          _id: pedidoId,
-        });
-
-        setQrCodeTexto(qrText);
-        setQrCodeUrl(qrBase64);
-        setPixStatus("pending");
-
-        localStorage.setItem(
-          "pix_pendente",
-          JSON.stringify({
-            _id: pedidoId,
-            total: valorTotal,
-            frete: valorFrete,
-            qrCodeTexto: qrText,
-            qrCodeUrl: qrBase64,
-            pixStatus: "pending",
-          })
-        );
-
-        // UX: abre “detalhes do código” fechado por padrão (mais limpo)
-        setResumoOpen(true);
-        setPixCodeOpen(true);
-        toast("info", "Pix gerado! Vamos te levar até o pagamento.");
-
-        // força o scroll (além do useEffect)
-        setTimeout(() => {
-          scrollToPix();
-        }, 250);
-
-        iniciarPollingPix(pedidoId);
-        return;
-
-      }
-
-      // outros
-      localStorage.removeItem("carrinho");
-      toast("success", "Pedido realizado com sucesso!");
-      navigate(`/meus-pedidos/${telLimpo}`);
-    } catch (err) {
-      console.error("Erro backend:", err?.response?.data || err);
-      toast("error", "Erro ao finalizar pedido.");
-    } finally {
-      setCarregando(false);
-    }
-  };
-
-  // ========= COPIAR =========
 
   const copiarPix = async () => {
     try {
@@ -604,7 +538,7 @@ const Checkout = () => {
         toast("success", "Pagamento aprovado! ✅ Redirecionando...");
         setTimeout(() => navigate(`/meus-pedidos/${telLimpo}`), 650);
       } else {
-        toast("info", "Ainda não identificou como pago. Se você já pagou, aguarde alguns segundos e tente novamente.");
+        toast("info", "Ainda não identificou como pago. Se já pagou, aguarde alguns segundos e tente novamente.");
       }
     } catch {
       toast("error", "Falha ao consultar status do Pix.");
@@ -615,7 +549,7 @@ const Checkout = () => {
 
   const handleSnackbarClose = () => setSnackbar((prev) => ({ ...prev, open: false }));
 
-  const totalPreview = subtotalPreview + frete;
+  const totalPreviewCalculado = subtotalPreview + frete;
 
   const chipPix = useMemo(() => {
     const s = String(pixStatus || "").toLowerCase();
@@ -636,11 +570,11 @@ const Checkout = () => {
     return undefined;
   }, [chipPix]);
 
-  // itens do resumo: compactar (máx 6 linhas + “ver mais”)
+  // itens do resumo
   const resumoItens = useMemo(() => {
     const base = itensPreview || [];
-    return base.map((it) => ({
-      key: `${it?.produtoId || it?._id || it?.nome || "item"}-${Math.random()}`,
+    return base.map((it, idx) => ({
+      key: `${it?.produtoId || it?._id || it?.nome || "item"}-${idx}`,
       nome: it?.nome || "Item",
       qtd: Number(it?.quantidade || 1),
       total: calcularValorItem(it),
@@ -651,6 +585,220 @@ const Checkout = () => {
   const maxResumo = 6;
   const resumoMostrado = resumoOpen ? resumoItens : resumoItens.slice(0, maxResumo);
   const temMaisResumo = resumoItens.length > maxResumo;
+
+  // ========= PAYLOAD BASE (reuso Pix/Cartão) =========
+  const montarPayloadPedidoBase = async () => {
+    const carrinho = JSON.parse(localStorage.getItem("carrinho") || "[]");
+
+    if (!restaurante?._id) throw new Error("Restaurante não identificado. Volte para a vitrine.");
+    if (telLimpo.length < 10 || !nome?.trim() || !endereco.rua?.trim() || carrinho.length === 0) {
+      throw new Error("Preencha telefone, nome, endereço de entrega e tenha itens no carrinho.");
+    }
+
+    const valorProdutos = carrinho.reduce((acc, item) => acc + calcularValorItem(item), 0);
+
+    const [lng, lat] = await geocodificarEndereco();
+    const valorFrete = await calcularFrete(lng, lat);
+    const valorTotal = valorProdutos + valorFrete;
+
+    setFrete(valorFrete);
+
+    const carrinhoFormatado = carrinho.map((item) => ({
+      ...item,
+      amount: Math.round((calcularValorItem(item) || 0) * 100),
+      description: item.nome,
+      quantity: item.quantidade,
+    }));
+
+    const freteItem = {
+      nome: "Entrega",
+      quantidade: 1,
+      precoUnitario: valorFrete,
+      precoTotal: valorFrete,
+      amount: Math.round(valorFrete * 100),
+      description: "Entrega",
+      quantity: 1,
+    };
+
+    const carrinhoComFrete = [...carrinhoFormatado, freteItem];
+
+    return {
+      carrinhoComFrete,
+      valorTotal,
+      valorFrete,
+      lat,
+      lng,
+    };
+  };
+
+  // ========= FINALIZAR PIX =========
+  const finalizarPix = async () => {
+    if (!mpConectado) {
+      toast("warning", "Pix indisponível: o restaurante não está conectado ao Mercado Pago.");
+      return;
+    }
+
+    setCarregando(true);
+    try {
+      const { carrinhoComFrete, valorTotal, valorFrete, lat, lng } = await montarPayloadPedidoBase();
+
+      const resp = await axios.post(`${API_URL}/pedidos/`, {
+        itens: carrinhoComFrete,
+        telefoneCliente: telLimpo,
+        nomeCliente: nome,
+        enderecoCliente: `${endereco.rua}, ${endereco.numero} - ${endereco.bairro}`,
+        residenciaNumero: endereco.numero,
+        residenciaComplemento: endereco.complemento || "",
+        residenciaReferencia: "",
+        residenciaBairro: endereco.bairro,
+        residenciaCep: endereco.cep,
+        latitudeCliente: lat,
+        longitudeCliente: lng,
+        valorTotal,
+        restaurante: restaurante._id,
+        formadePagamento: "Pix",
+        origem: "vitrine",
+        valorFrete,
+      });
+
+      const pedidoId = resp.data?.pedidoId || resp.data?._id || null;
+      const qrText = resp.data?.pix_qr_code || resp.data?.qr_code || "";
+      const qrBase64 =
+        resp.data?.pix_qr_code_base64 ||
+        resp.data?.qr_code_base64 ||
+        resp.data?.pix_qr_code_url ||
+        resp.data?.qr_code_url ||
+        "";
+
+      if (!pedidoId) {
+        toast("error", "Pedido criado, mas não recebi o ID do pedido no retorno.");
+        return;
+      }
+      if (!qrText && !qrBase64) {
+        toast("error", "Pedido criado, mas não recebi o QR Code Pix.");
+        return;
+      }
+
+      setResumoPedido({
+        itens: carrinhoComFrete,
+        total: valorTotal,
+        frete: valorFrete,
+        _id: pedidoId,
+      });
+
+      setQrCodeTexto(qrText);
+      setQrCodeUrl(qrBase64);
+      setPixStatus("pending");
+
+      localStorage.setItem(
+        "pix_pendente",
+        JSON.stringify({
+          _id: pedidoId,
+          total: valorTotal,
+          frete: valorFrete,
+          qrCodeTexto: qrText,
+          qrCodeUrl: qrBase64,
+          pixStatus: "pending",
+        })
+      );
+
+      setResumoOpen(true);
+      setPixCodeOpen(true);
+      toast("info", "Pix gerado! Faça o pagamento no app do banco.");
+      iniciarPollingPix(pedidoId);
+    } catch (err) {
+      console.error("Erro backend:", err?.response?.data || err);
+      toast("error", err?.response?.data?.message || err?.message || "Erro ao finalizar pedido.");
+    } finally {
+      setCarregando(false);
+    }
+  };
+
+  // ========= FINALIZAR CARTÃO (chamado pelo Brick) =========
+  const finalizarCartao = async ({ token, payment_method_id, issuer_id, installments, payer }) => {
+    setCarregando(true);
+    try {
+      const { carrinhoComFrete, valorTotal, valorFrete, lat, lng } = await montarPayloadPedidoBase();
+
+      const resp = await axios.post(`${API_URL}/pedidos/`, {
+        itens: carrinhoComFrete,
+        telefoneCliente: telLimpo,
+        nomeCliente: nome,
+        enderecoCliente: `${endereco.rua}, ${endereco.numero} - ${endereco.bairro}`,
+        residenciaNumero: endereco.numero,
+        residenciaComplemento: endereco.complemento || "",
+        residenciaReferencia: "",
+        residenciaBairro: endereco.bairro,
+        residenciaCep: endereco.cep,
+        latitudeCliente: lat,
+        longitudeCliente: lng,
+        valorTotal,
+        restaurante: restaurante._id,
+        formadePagamento: "CartaoCredito",
+        origem: "vitrine",
+        valorFrete,
+
+        // ✅ vai pro controller como mpCard
+        mpCard: {
+          token,
+          payment_method_id,
+          issuer_id,
+          installments,
+          payer,
+        },
+      });
+
+      const status = String(resp.data?.statusPagamento || "").toLowerCase();
+
+      if (status === "approved" || status === "paid") {
+        localStorage.removeItem("carrinho");
+        toast("success", "Pagamento aprovado! ✅ Redirecionando...");
+        setTimeout(() => navigate(`/meus-pedidos/${telLimpo}`), 650);
+        return;
+      }
+
+      if (status === "in_process" || status === "pending" || status === "authorized") {
+        toast("info", "Pagamento em análise. Se for aprovado, seu pedido aparecerá em Meus Pedidos.");
+        return;
+      }
+
+      toast("error", "Pagamento não aprovado. Tente outro cartão.");
+    } catch (err) {
+      console.error("Erro cartão:", err?.response?.data || err);
+      toast("error", err?.response?.data?.message || "Falha ao processar cartão.");
+    } finally {
+      setCarregando(false);
+    }
+  };
+
+  // ========= SUBMIT BRICK =========
+  const onSubmitCartao = async (formData) => {
+    try {
+      const token = formData?.token;
+      const payment_method_id = formData?.payment_method_id;
+      const issuer_id = formData?.issuer_id;
+      const installments = formData?.installments || 1;
+
+      const payerEmail =
+        formData?.payer?.email ||
+        (telLimpo ? `${telLimpo}@movyo.com` : "comprador@movyo.com");
+
+      const payer = {
+        email: payerEmail,
+        identification: formData?.payer?.identification,
+      };
+
+      if (!token || !payment_method_id) {
+        toast("error", "Não consegui obter token do cartão. Tente novamente.");
+        return;
+      }
+
+      await finalizarCartao({ token, payment_method_id, issuer_id, installments, payer });
+    } catch (e) {
+      console.error("onSubmitCartao error:", e);
+      toast("error", "Falha ao enviar dados do cartão.");
+    }
+  };
 
   return (
     <Box display="flex" flexDirection="column" minHeight="100vh" sx={{ backgroundColor: "#f5f5f7" }}>
@@ -673,11 +821,6 @@ const Checkout = () => {
               <Typography variant="subtitle1" fontWeight="bold" noWrap>
                 {restaurante?.nome || "Restaurante"}
               </Typography>
-              {restaurante && (
-                <Typography variant="caption" sx={{ color: "rgba(255,255,255,0.85)" }} noWrap>
-                  {restaurante.enderecoBairro} • {restaurante.enderecoCidade || ""}
-                </Typography>
-              )}
             </Box>
           </Box>
 
@@ -692,7 +835,7 @@ const Checkout = () => {
           Finalizar Pedido
         </Typography>
 
-        {/* ✅ PIX TOP CARD (compacto) */}
+        {/* PIX TOP CARD */}
         {resumoPedido._id && isPix && (
           <Paper
             elevation={0}
@@ -725,7 +868,7 @@ const Checkout = () => {
                 </Stack>
 
                 <Typography variant="caption" color="text.secondary" noWrap>
-                  Pedido <b>{resumoPedido._id}</b> • Total <b>R$ {money(resumoPedido.total || totalPreview)}</b>
+                  Pedido <b>{resumoPedido._id}</b> • Total <b>R$ {money(resumoPedido.total || totalPreviewCalculado)}</b>
                 </Typography>
               </Stack>
 
@@ -845,7 +988,6 @@ const Checkout = () => {
                       </Button>
                     </Stack>
 
-                    {/* Mostra só um “preview” compacto; detalhes ficam no Dialog */}
                     <Box
                       sx={{
                         mt: 1,
@@ -865,15 +1007,7 @@ const Checkout = () => {
                     </Box>
 
                     <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mt: 1 }}>
-                      <Button
-                        size="small"
-                        onClick={() => setPixCodeOpen(true)}
-                        sx={{ textTransform: "none", fontWeight: 800, opacity: 0.85 }}
-                        disabled
-                      >
-                        {/* placeholder (mantém layout bonito) */}
-                      </Button>
-
+                      <Button size="small" disabled />
                       <Button
                         size="small"
                         onClick={() => setConfirmEditarPix(true)}
@@ -902,13 +1036,7 @@ const Checkout = () => {
           </Paper>
         )}
 
-        <Paper
-          sx={{
-            p: 2.2,
-            borderRadius: 3,
-            boxShadow: "0px 2px 8px rgba(15, 23, 42, 0.08)",
-          }}
-        >
+        <Paper sx={{ p: 2.2, borderRadius: 3, boxShadow: "0px 2px 8px rgba(15, 23, 42, 0.08)" }}>
           {/* DADOS DO CLIENTE */}
           <TextField
             label="Telefone"
@@ -1056,7 +1184,7 @@ const Checkout = () => {
             Frete estimado: R$ {money(frete)}
           </Typography>
 
-          {/* ✅ RESUMO (compacto, não gigante) */}
+          {/* RESUMO */}
           {itensPreview.length > 0 && (
             <Paper
               elevation={0}
@@ -1139,7 +1267,7 @@ const Checkout = () => {
                     Total
                   </Typography>
                   <Typography variant="body1" fontWeight={900}>
-                    R$ {money(totalPreview)}
+                    R$ {money(totalPreviewCalculado)}
                   </Typography>
                 </Stack>
               </Stack>
@@ -1156,16 +1284,32 @@ const Checkout = () => {
                   </Typography>
 
                   <RadioGroup value={formaPagamento} onChange={(e) => setFormaPagamento(e.target.value)}>
-                    <FormControlLabel
-                      value="Pix"
-                      control={<Radio />}
-                      label={
-                        <Box display="flex" alignItems="center" gap={1}>
-                          <PixIcon color={formaPagamento === "Pix" ? "primary" : "action"} />
-                          <Typography>Pix</Typography>
-                        </Box>
-                      }
-                    />
+                    {/* PIX só se MP conectado */}
+                    {mpCarregando ? (
+                      <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: 1, mt: 0.5 }}>
+                        <CircularProgress size={16} />
+                        <Typography variant="body2" color="text.secondary">
+                          Verificando Pix...
+                        </Typography>
+                      </Box>
+                    ) : mpConectado ? (
+                      <FormControlLabel
+                        value="Pix"
+                        control={<Radio />}
+                        label={
+                          <Box display="flex" alignItems="center" gap={1}>
+                            <PixIcon color={formaPagamento === "Pix" ? "primary" : "action"} />
+                            <Typography>Pix</Typography>
+                            <Chip label="Disponível" size="small" color="success" sx={{ fontWeight: 900 }} />
+                          </Box>
+                        }
+                      />
+                    ) : (
+                      <Alert severity="warning" sx={{ mb: 1, borderRadius: 2 }}>
+                        Pix indisponível para esta loja.
+                      </Alert>
+                    )}
+
                     <FormControlLabel
                       value="CartaoCredito"
                       control={<Radio />}
@@ -1185,30 +1329,106 @@ const Checkout = () => {
                       Voltar
                     </Button>
 
-                    <Button
-                      variant="contained"
-                      onClick={finalizarPedido}
-                      disabled={carregando}
-                      sx={{
-                        textTransform: "none",
-                        fontWeight: 900,
-                        borderRadius: 2,
-                        background: "linear-gradient(90deg,#ff4b8b,#ff7a3d,#ffb347)",
-                        "&:hover": {
-                          opacity: 0.95,
+                    {/* ✅ Botão muda conforme pagamento */}
+                    {isPix ? (
+                      <Button
+                        variant="contained"
+                        onClick={finalizarPix}
+                        disabled={carregando || mpCarregando || !mpConectado}
+                        sx={{
+                          textTransform: "none",
+                          fontWeight: 900,
+                          borderRadius: 2,
                           background: "linear-gradient(90deg,#ff4b8b,#ff7a3d,#ffb347)",
-                        },
-                      }}
-                    >
-                      {carregando ? <CircularProgress size={22} /> : "Finalizar pedido"}
-                    </Button>
+                          "&:hover": { opacity: 0.95, background: "linear-gradient(90deg,#ff4b8b,#ff7a3d,#ffb347)" },
+                        }}
+                      >
+                        {carregando ? <CircularProgress size={22} /> : "Gerar Pix"}
+                      </Button>
+                    ) : (
+                      <Button
+                        variant="contained"
+                        disabled
+                        sx={{
+                          textTransform: "none",
+                          fontWeight: 900,
+                          borderRadius: 2,
+                          opacity: 0.7,
+                          background: "linear-gradient(90deg,#ff4b8b,#ff7a3d,#ffb347)",
+                        }}
+                      >
+                        Pague no formulário abaixo
+                      </Button>
+                    )}
                   </Box>
                 </Grid>
               </Grid>
+
+              {/* ✅ BRICK DO CARTÃO */}
+              {isCard && (
+                <Box mt={2}>
+                  {!MP_PUBLIC_KEY ? (
+                    <Alert severity="error" sx={{ borderRadius: 2 }}>
+                      Falta configurar <b>VITE_MP_PUBLIC_KEY</b> no front (.env).
+                    </Alert>
+                  ) : !isHttpsOk ? (
+                    <Alert severity="error" sx={{ borderRadius: 2 }}>
+                      O formulário de cartão do Mercado Pago exige <b>HTTPS</b> (ou <b>localhost</b>). <br />
+                      Publique seu front em HTTPS (Cloudflare/Vercel/Netlify) ou teste em localhost.
+                    </Alert>
+                  ) : !mpInited ? (
+                    <Alert severity="warning" sx={{ borderRadius: 2 }}>
+                      Inicializando Mercado Pago...
+                    </Alert>
+                  ) : !mpConectado && !mpCarregando ? (
+                    <Alert severity="warning" sx={{ borderRadius: 2 }}>
+                      Cartão indisponível: o restaurante não está conectado ao Mercado Pago.
+                    </Alert>
+                  ) : (
+                    <Paper
+                      variant="outlined"
+                      sx={{
+                        mt: 1,
+                        p: 1.5,
+                        borderRadius: 2.5,
+                        bgcolor: "#fff",
+                      }}
+                    >
+                      <Typography fontWeight={900} sx={{ mb: 1 }}>
+                        Pagamento com cartão
+                      </Typography>
+
+                      <CardPayment
+                        initialization={{
+                          amount: Number(totalPreviewCalculado || 0),
+                        }}
+                        customization={{
+                          visual: {
+                            hideFormTitle: true,
+                            // ✅ NÃO esconder o botão: o brick gerencia submit corretamente
+                            hidePaymentButton: false,
+                          },
+                        }}
+                        onSubmit={async (formData) => {
+                          await onSubmitCartao(formData);
+                        }}
+                        onError={(err) => {
+                          console.error("MP CardPayment error:", err);
+                          toast("error", "Erro ao carregar formulário do cartão.");
+                        }}
+                      />
+
+                      <Alert severity="info" sx={{ mt: 1, borderRadius: 2 }}>
+                        Dica: preencher <b>e-mail</b> e <b>CPF</b> melhora aprovação.
+                      </Alert>
+                    </Paper>
+                  )}
+                </Box>
+              )}
             </Box>
           )}
 
-          {/* Se Pix pendente: dica compacta (sem gigantismo) */}
+          {/* Se Pix pendente */}
           {pixPendente && (
             <Alert
               severity="info"
@@ -1218,9 +1438,8 @@ const Checkout = () => {
                 backgroundColor: "rgba(255,255,255,0.8)",
               }}
             >
-              Pagamento Pix pendente. Você pode copiar o código e pagar no app do banco.
-              {` `}
-              Quando pagar, o status atualiza automaticamente — ou toque em <b>Verificar</b>.
+              Pagamento Pix pendente. Você pode copiar o código e pagar no app do banco. Quando pagar, o status atualiza
+              automaticamente — ou toque em <b>Verificar</b>.
             </Alert>
           )}
         </Paper>
@@ -1231,8 +1450,8 @@ const Checkout = () => {
         <DialogTitle>Editar dados?</DialogTitle>
         <DialogContent>
           <Typography variant="body2" color="text.secondary">
-            Isso vai remover o Pix pendente do navegador e destravar os campos para você editar.
-            O pedido já criado no backend continuará existindo (se quiser, você pode cancelá-lo no painel).
+            Isso vai remover o Pix pendente do navegador e destravar os campos para você editar. O pedido já criado no
+            backend continuará existindo (se quiser, você pode cancelá-lo no painel).
           </Typography>
         </DialogContent>
         <DialogActions>

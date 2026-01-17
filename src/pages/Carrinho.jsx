@@ -77,7 +77,6 @@ function getRestauranteFromLS() {
     const raw = localStorage.getItem("restauranteSelecionado");
     if (!raw) return null;
     const parsed = JSON.parse(raw);
-    // às vezes vem { restaurante: {...} }
     if (parsed?.restaurante && typeof parsed.restaurante === "object") return parsed.restaurante;
     return parsed;
   } catch {
@@ -89,41 +88,24 @@ function plural(n, s, p) {
   return n === 1 ? s : p;
 }
 
-/**
- * ✅ Converte saboresSelecionados em lista de strings SEMPRE
- * (pode vir string, array de strings, array de objetos...)
- */
-function normalizeSaboresSelecionados(val) {
+function normalizeStringsArray(val) {
   if (!val) return [];
   if (typeof val === "string") return val.trim() ? [val.trim()] : [];
-
   if (Array.isArray(val)) {
     return val
       .map((x) => {
         if (!x) return null;
-        if (typeof x === "string") return x;
-        if (typeof x === "object") return x.nome || x.name || null;
+        if (typeof x === "string") return x.trim();
+        if (typeof x === "object") return (x.nome || x.name || "").toString().trim() || null;
         return null;
       })
       .filter(Boolean);
   }
+  if (typeof val === "object") {
+    if (Array.isArray(val.saboresSelecionados)) return normalizeStringsArray(val.saboresSelecionados);
+    if (Array.isArray(val.sabores)) return normalizeStringsArray(val.sabores);
+  }
   return [];
-}
-
-/**
- * ✅ Mesma ideia para complementos (pode vir array de string ou array de objeto)
- */
-function normalizeNomesArray(val) {
-  if (!val) return [];
-  if (!Array.isArray(val)) return [];
-  return val
-    .map((x) => {
-      if (!x) return null;
-      if (typeof x === "string") return x;
-      if (typeof x === "object") return x.nome || x.name || null;
-      return null;
-    })
-    .filter(Boolean);
 }
 
 export default function Carrinho() {
@@ -186,7 +168,6 @@ export default function Carrinho() {
       const sub = Number(item.precoTotal || 0);
       if (sub > 0) return acc + sub;
 
-      // fallback legado
       const unit = Number(
         item.precoUnitario || item.precoFinal || item.preco || item.total || 0
       );
@@ -207,7 +188,6 @@ export default function Carrinho() {
         return next;
       }
 
-      // ✅ mantém proporcional com base no unitário (precoTotal / qtd)
       const unit =
         Number(atual.precoTotal || 0) > 0
           ? Number(atual.precoTotal || 0) / (atual.quantidade || 1)
@@ -249,9 +229,7 @@ export default function Carrinho() {
         .join("")
         .slice(0, 2)
         .toUpperCase();
-      return (
-        <Avatar sx={{ width: size, height: size }}>{initials || "R"}</Avatar>
-      );
+      return <Avatar sx={{ width: size, height: size }}>{initials || "R"}</Avatar>;
     }
     return (
       <Avatar
@@ -263,51 +241,76 @@ export default function Carrinho() {
 
   /**
    * ✅ Monta linhas/chips com detalhes do item
-   * - mostra metade/metade corretamente (2 sabores)
-   * - funciona com estruturas antigas e novas
+   * - sabores: quando for 2 sabores, renderiza em linhas
    */
   const getDetalhes = (item) => {
     const chips = [];
 
-    // Sabores (metade/metade)
-    const sabores = normalizeSaboresSelecionados(item.saboresSelecionados);
+    // ---------- SABORES ----------
+    const saboresRaw =
+      item?.saboresSelecionados ??
+      item?.sabores ??
+      item?.pizza?.saboresSelecionados ??
+      item?.pizza?.sabores;
+
+    const sabores = normalizeStringsArray(saboresRaw);
+
+    const isPizzaMulti =
+      item?.categoriaType === "pizza" ||
+      item?.pizzaMultisabor === true ||
+      Number(item?.maxSabores || 0) >= 2;
+
     if (sabores.length) {
-      const max = Number(item.maxSabores || 0);
+      const saboresFinal = isPizzaMulti ? sabores.slice(0, 2) : sabores;
 
-      // se for pizza multi (max>=2) e veio só 1 sabor, mostra que faltou/está incompleto
-      // (isso ajuda a identificar quando algum item antigo no carrinho veio errado)
-      const isMulti = max >= 2 || item.pizzaMultisabor === true;
+      // ✅ Aqui é o formato que você quer:
+      // Sabores:
+      // Calabresa
+      // 4 Queijos
+      chips.push({
+        key: "sabores",
+        labelNode: (
+          <Box sx={{ display: "flex", flexDirection: "column", gap: 0.25 }}>
+            <Typography sx={{ fontWeight: 900, fontSize: 12, lineHeight: 1.1 }}>
+              Sabores:
+            </Typography>
 
-      const label =
-        sabores.length >= 2
-          ? `Sabores: ${sabores.join(" + ")}`
-          : isMulti
-          ? `Sabores: ${sabores[0]} (faltou 1)`
-          : `Sabor: ${sabores[0]}`;
-
-      chips.push({ key: "sabores", label });
+            {saboresFinal.map((s, idx) => (
+              <Typography
+                key={`${s}-${idx}`}
+                sx={{ fontWeight: 800, fontSize: 12, lineHeight: 1.1 }}
+              >
+                {s}
+              </Typography>
+            ))}
+          </Box>
+        ),
+      });
     }
 
-    // Borda
+    // ---------- BORDA ----------
     if (item?.bordaSelecionada?.nome) {
       chips.push({ key: "borda", label: `Borda: ${item.bordaSelecionada.nome}` });
     }
 
-    // Adicional
+    // ---------- ADICIONAL ----------
     if (item?.adicionalSelecionado?.nome) {
-      chips.push({ key: "adicional", label: `Adicional: ${item.adicionalSelecionado.nome}` });
+      chips.push({
+        key: "adicional",
+        label: `Adicional: ${item.adicionalSelecionado.nome}`,
+      });
     }
 
-    // Complementos
-    const comps = normalizeNomesArray(item.complementosSelecionados);
+    // ---------- COMPLEMENTOS ----------
+    const comps = normalizeStringsArray(item?.complementosSelecionados);
     if (comps.length) {
       chips.push({ key: "comps", label: `Complementos: ${comps.join(", ")}` });
     }
 
-    // Tipos extras (obj: { "Bebida": [ {nome,preco}, ... ] })
-    if (item.tiposExtrasSelecionados && typeof item.tiposExtrasSelecionados === "object") {
+    // ---------- TIPOS EXTRAS ----------
+    if (item?.tiposExtrasSelecionados && typeof item.tiposExtrasSelecionados === "object") {
       Object.entries(item.tiposExtrasSelecionados).forEach(([nomeTipo, itensTipo]) => {
-        const nomes = normalizeNomesArray(itensTipo);
+        const nomes = normalizeStringsArray(itensTipo).slice(0, 6);
         if (nomes.length) {
           chips.push({
             key: `extra-${nomeTipo}`,
@@ -459,20 +462,52 @@ export default function Carrinho() {
 
                       {/* detalhes (chips) */}
                       {detalhes.length > 0 && (
-                        <Box sx={{ mt: 0.6, display: "flex", gap: 0.6, flexWrap: "wrap" }}>
-                          {detalhes.map((d, i) => (
-                            <Chip
-                              key={`${d.key}-${i}`}
-                              label={d.label}
-                              size="small"
-                              sx={{
-                                height: 22,
-                                borderRadius: "999px",
-                                bgcolor: "rgba(17,24,39,0.06)",
-                                fontWeight: 800,
-                              }}
-                            />
-                          ))}
+                        <Box
+                          sx={{
+                            mt: 0.6,
+                            display: "flex",
+                            gap: 0.6,
+                            flexWrap: "wrap",
+                            width: "100%",
+                          }}
+                        >
+                          {detalhes.map((d, i) => {
+                            const isSabores = d.key === "sabores";
+                            return (
+                              <Chip
+                                key={`${d.key}-${i}`}
+                                label={isSabores ? d.labelNode : d.label}
+                                size="small"
+                                sx={{
+                                  borderRadius: "16px",
+                                  bgcolor: "rgba(17,24,39,0.06)",
+                                  fontWeight: 800,
+
+                                  ...(isSabores
+                                    ? {
+                                      width: "100%",
+                                      height: "auto",
+                                      py: 0.6,
+                                      alignItems: "flex-start",
+                                      "& .MuiChip-label": {
+                                        whiteSpace: "normal",
+                                        overflow: "visible",
+                                        textOverflow: "unset",
+                                        display: "block",
+                                        px: 1.0,
+                                        py: 0.2,
+                                      },
+                                    }
+                                    : {
+                                      height: 22,
+                                      "& .MuiChip-label": {
+                                        whiteSpace: "nowrap",
+                                      },
+                                    }),
+                                }}
+                              />
+                            );
+                          })}
                         </Box>
                       )}
 
@@ -547,12 +582,27 @@ export default function Carrinho() {
                   "&:hover": { bgcolor: "#ff6b2a" },
                 }}
                 onClick={() => {
-                  setSnack({
-                    open: true,
-                    msg: "Próximo passo: finalizar pedido (implementar/ligar rota).",
-                    severity: "info",
-                  });
+                  if (carrinhoVazio) {
+                    setSnack({
+                      open: true,
+                      msg: "Seu carrinho está vazio.",
+                      severity: "warning",
+                    });
+                    return;
+                  }
+
+                  if (!statusLoja?.toLowerCase().includes("aberto")) {
+                    setSnack({
+                      open: true,
+                      msg: "A loja está fechada no momento.",
+                      severity: "warning",
+                    });
+                    return;
+                  }
+
+                  navigate(`/checkout`);
                 }}
+
               >
                 Finalizar pedido
               </Button>
