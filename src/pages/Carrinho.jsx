@@ -600,7 +600,7 @@ export default function Carrinho() {
                     return;
                   }
 
-                  navigate(`/checkout`);
+                  navigate(`/p/checkout`);
                 }}
 
               >
