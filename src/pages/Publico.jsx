@@ -46,6 +46,50 @@ const DEFAULT_IMAGE_URL =
 
 const API_URL = "https://api.movyo.delivery/api";
 
+// ✅ chaves do storage (controle por restaurante)
+const CART_KEY = "carrinho";
+const CART_OWNER_KEY = "carrinho_restaurante_id";
+const PIX_PENDENTE_KEY = "pix_pendente";
+
+function readCartSafe() {
+  try {
+    const arr = JSON.parse(localStorage.getItem(CART_KEY) || "[]");
+    return Array.isArray(arr) ? arr : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * ✅ Se trocou de restaurante:
+ * - limpa carrinho
+ * - limpa pix pendente (pra não "vazar" checkout)
+ * - seta o dono do carrinho
+ */
+function syncCartOwnerOrReset(restId) {
+  if (!restId) return;
+
+  const restStr = String(restId);
+  const owner = String(localStorage.getItem(CART_OWNER_KEY) || "");
+
+  // se existe owner e é diferente -> zera
+  if (owner && owner !== restStr) {
+    localStorage.removeItem(CART_KEY);
+    localStorage.removeItem(PIX_PENDENTE_KEY);
+  }
+
+  // se não existe owner, mas existe carrinho -> zera (defensivo, evita "vazamento" antigo)
+  if (!owner) {
+    const cart = readCartSafe();
+    if (cart.length > 0) {
+      localStorage.removeItem(CART_KEY);
+      localStorage.removeItem(PIX_PENDENTE_KEY);
+    }
+  }
+
+  localStorage.setItem(CART_OWNER_KEY, restStr);
+}
+
 /**
  * Calcula status "Aberto" / "Fechado"
  * com suporte a horários que viram madrugada (ex: 18:00 -> 02:00).
@@ -178,7 +222,7 @@ const Publico = () => {
   // ======= Carrinho contador =======
   useEffect(() => {
     const atualizarQuantidade = () => {
-      const carrinho = JSON.parse(localStorage.getItem("carrinho")) || [];
+      const carrinho = JSON.parse(localStorage.getItem(CART_KEY) || "[]") || [];
       const total = carrinho.reduce((acc, item) => acc + (item.quantidade || 0), 0);
       setQuantidadeCarrinho(total);
     };
@@ -208,18 +252,25 @@ const Publico = () => {
     const restauranteLSRaw = restauranteData ? JSON.parse(restauranteData) : null;
     const restauranteLS = normalizarRestaurante(restauranteLSRaw);
 
-    const slugEfetivo =
-      slug || restauranteLS?.slugIdentificador || restauranteLS?.slug || null;
+    const slugEfetivo = slug || restauranteLS?.slugIdentificador || restauranteLS?.slug || null;
 
     if (!slugEfetivo) {
       navigate("/erro", { replace: true });
       return;
     }
 
-    if (restauranteLS) {
+    // ✅ evita "flash" de restaurante errado:
+    // só usa restaurante do LS se não tiver slug na URL ou se bater com o slug atual
+    const slugLS = restauranteLS?.slugIdentificador || restauranteLS?.slug || null;
+    const podeUsarLS = !slug || (slugLS && slugLS === slug);
+
+    if (podeUsarLS && restauranteLS) {
       setRestaurante(restauranteLS);
       setStatusLoja(calcularStatusLoja(restauranteLS));
+      // ⚠️ só sincroniza carrinho com LS se for o mesmo slug da URL
+      if (restauranteLS?._id) syncCartOwnerOrReset(restauranteLS._id);
     } else {
+      setRestaurante(null);
       setStatusLoja("Carregando...");
     }
 
@@ -233,6 +284,16 @@ const Publico = () => {
         if (!restauranteFresh) {
           navigate("/erro", { replace: true });
           return;
+        }
+
+        // ✅ AQUI: se mudou restaurante, zera carrinho imediatamente
+        if (restauranteFresh?._id) {
+          const owner = String(localStorage.getItem(CART_OWNER_KEY) || "");
+          if (owner && owner !== String(restauranteFresh._id)) {
+            // zera a badge na hora (o interval também atualiza depois)
+            setQuantidadeCarrinho(0);
+          }
+          syncCartOwnerOrReset(restauranteFresh._id);
         }
 
         const produtosPorCategoria =
@@ -1199,7 +1260,7 @@ const Publico = () => {
       <Paper elevation={10} sx={{ position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 1000 }}>
         <BottomNavigation showLabels>
           <BottomNavigationAction label="Início" icon={<HomeIcon />} onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })} />
-          <BottomNavigationAction label="Pedidos" icon={<ListAltIcon />} onClick={() => navigate("/meus-pedidos")} />
+          <BottomNavigationAction label="Pedidos" icon={<ListAltIcon />} onClick={() => navigate("p/meus-pedidos")} />
           <BottomNavigationAction
             label="Carrinho"
             icon={
@@ -1207,7 +1268,7 @@ const Publico = () => {
                 <ShoppingCartIcon />
               </Badge>
             }
-            onClick={() => navigate("/carrinho")}
+            onClick={() => navigate("p/carrinho")}
           />
         </BottomNavigation>
       </Paper>

@@ -31,6 +31,7 @@ import {
   DialogTitle,
   DialogContent,
   DialogActions,
+  LinearProgress,
 } from "@mui/material";
 import axios from "axios";
 import { useNavigate } from "react-router-dom";
@@ -50,6 +51,8 @@ import EditIcon from "@mui/icons-material/Edit";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import ExpandLessIcon from "@mui/icons-material/ExpandLess";
 import ReceiptLongIcon from "@mui/icons-material/ReceiptLong";
+import AccessTimeIcon from "@mui/icons-material/AccessTime";
+import CancelIcon from "@mui/icons-material/Cancel";
 
 // ✅ Mercado Pago Brick
 import { initMercadoPago, CardPayment } from "@mercadopago/sdk-react";
@@ -60,18 +63,37 @@ const MAPBOX_TOKEN =
 
 const MP_PUBLIC_KEY = import.meta.env.VITE_MP_PUBLIC_KEY || ""; // ✅ coloque no .env
 
+// ✅ guarda telefone do cliente (para buscar pedidos depois)
+const LS_CLIENT_PHONE_KEY = "cliente_telefone";
+
 // sem pizza 🙏
 const DEFAULT_IMAGE_URL = "";
 
 // ✅ ajuste aqui se sua rota pública de status for diferente
-const PIX_STATUS_PATH = "/publico/pix/status";
+const PIX_STATUS_PATH = "/publico/status";
 
 // ✅ status público do Mercado Pago (pra habilitar Pix) — você já usa
-const MP_STATUS_PUBLICO_PATH = "/mercadopago/status-publico";
+const MP_STATUS_PUBLICO_PATH = "/mercadopago/status";
+
+// ✅ tempo de expiração visual do Pix (ajuste como quiser)
+const PIX_TTL_MS = 15 * 60 * 1000; // 15 minutos
+
+// ✅ taxa cartão (3,8%)
+const CARD_FEE_RATE = 0.038;
+const round2 = (v) => Math.round((Number(v || 0) + Number.EPSILON) * 100) / 100;
 
 const money = (v) => {
   const num = Number(v || 0);
   return num.toFixed(2);
+};
+
+const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
+
+const formatMsToMMSS = (ms) => {
+  const total = Math.max(0, Math.floor((ms || 0) / 1000));
+  const m = Math.floor(total / 60);
+  const s = total % 60;
+  return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 };
 
 /**
@@ -129,6 +151,12 @@ const Checkout = () => {
   const [pixStatus, setPixStatus] = useState(null);
   const [verificandoPix, setVerificandoPix] = useState(false);
 
+  // ✅ expiração visual Pix
+  const [pixCreatedAt, setPixCreatedAt] = useState(null); // timestamp ms
+  const [pixExpiresAt, setPixExpiresAt] = useState(null); // timestamp ms
+  const [pixTimeLeftMs, setPixTimeLeftMs] = useState(0);
+  const [confirmCancelarPix, setConfirmCancelarPix] = useState(false);
+
   // Pedido
   const [resumoPedido, setResumoPedido] = useState({
     itens: [],
@@ -168,6 +196,9 @@ const Checkout = () => {
   // polling PIX
   const pollRef = useRef(null);
 
+  // countdown timer
+  const countdownRef = useRef(null);
+
   const toast = (severity, message) => setSnackbar({ open: true, severity, message });
 
   const limparPollingPix = () => {
@@ -177,8 +208,18 @@ const Checkout = () => {
     }
   };
 
+  const limparCountdownPix = () => {
+    if (countdownRef.current) {
+      clearInterval(countdownRef.current);
+      countdownRef.current = null;
+    }
+  };
+
   useEffect(() => {
-    return () => limparPollingPix();
+    return () => {
+      limparPollingPix();
+      limparCountdownPix();
+    };
   }, []);
 
   // ========= HELPERS =========
@@ -247,9 +288,34 @@ const Checkout = () => {
     return window.location.protocol === "https:" || isLocal;
   }, []);
 
+  // ========= FLAGS PIX =========
+  const isPix = (formaPagamento || "").toLowerCase() === "pix";
+  const isCard = (formaPagamento || "").toLowerCase() === "cartaocredito";
+
+  const pixTemPedido = Boolean(resumoPedido?._id) && isPix && Boolean(qrCodeTexto || qrCodeUrl);
+  const pixExpirado = useMemo(() => {
+    if (!pixTemPedido) return false;
+    if (!pixExpiresAt) return false;
+    const st = String(pixStatus || "").toLowerCase();
+    const jaPago = st === "approved" || st === "paid" || st === "pago";
+    if (jaPago) return false;
+    return Date.now() >= pixExpiresAt;
+  }, [pixTemPedido, pixExpiresAt, pixStatus]);
+
+  const pixAtivo = pixTemPedido && !pixExpirado;
+
+  // ✅ trava apenas enquanto Pix estiver ativo (não expirado)
+  const travarFormulario = pixAtivo || carregando;
+
   // ========= CARRINHO + RESTAURA PIX PENDENTE =========
 
   useEffect(() => {
+    // ✅ restaura telefone salvo (evita /meus-pedidos/ vazio após refresh)
+    const savedPhone = (localStorage.getItem(LS_CLIENT_PHONE_KEY) || "").replace(/\D/g, "");
+    if (savedPhone && !telefone) {
+      setTelefone(formatarTelefone(savedPhone));
+    }
+
     const carrinho = JSON.parse(localStorage.getItem("carrinho") || "[]");
     setItensPreview(carrinho);
 
@@ -259,6 +325,12 @@ const Checkout = () => {
     // restaura PIX pendente (se existir)
     try {
       const pend = JSON.parse(localStorage.getItem("pix_pendente") || "null");
+      if (pend?.telefone) {
+        const pTel = String(pend.telefone).replace(/\D/g, "");
+        if (pTel) localStorage.setItem(LS_CLIENT_PHONE_KEY, pTel);
+        if (pTel && !telefone) setTelefone(formatarTelefone(pTel));
+      }
+
       if (pend?._id && (pend?.qrCodeTexto || pend?.qrCodeUrl)) {
         setResumoPedido((prev) => ({
           ...prev,
@@ -266,14 +338,62 @@ const Checkout = () => {
           total: pend.total || 0,
           frete: pend.frete || 0,
         }));
+
         setQrCodeTexto(pend.qrCodeTexto || "");
         setQrCodeUrl(pend.qrCodeUrl || "");
         setPixStatus(pend.pixStatus || "pending");
         setFormaPagamento("Pix");
+
+        const createdAt = Number(pend.pixCreatedAt || Date.now());
+        const expiresAt = Number(pend.pixExpiresAt || createdAt + PIX_TTL_MS);
+
+        setPixCreatedAt(createdAt);
+        setPixExpiresAt(expiresAt);
+
+        const left = expiresAt - Date.now();
+        setPixTimeLeftMs(left);
+
+        // se ainda está no tempo, volta a acompanhar
+        if (left > 0) {
+          setPixCodeOpen(true);
+          iniciarPollingPix(pend._id, expiresAt);
+        }
       }
-    } catch {}
+    } catch {
+      // ignore
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // ========= COUNTDOWN (visual) =========
+  useEffect(() => {
+    limparCountdownPix();
+
+    if (!pixTemPedido || !pixExpiresAt) return;
+
+    countdownRef.current = setInterval(() => {
+      const left = pixExpiresAt - Date.now();
+      setPixTimeLeftMs(left);
+
+      // expirou
+      if (left <= 0) {
+        clearInterval(countdownRef.current);
+        countdownRef.current = null;
+
+        // se não pagou, marca expirado visualmente
+        const s = String(pixStatus || "").toLowerCase();
+        const jaPago = s === "approved" || s === "paid" || s === "pago";
+        if (!jaPago) {
+          limparPollingPix();
+          setPixStatus("expired");
+          toast("warning", "Pix expirou. Gere um novo Pix para continuar.");
+        }
+      }
+    }, 1000);
+
+    return () => limparCountdownPix();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pixTemPedido, pixExpiresAt, pixStatus]);
 
   // ========= MERCADO PAGO STATUS (habilitar Pix) =========
   useEffect(() => {
@@ -303,13 +423,6 @@ const Checkout = () => {
       setFormaPagamento("CartaoCredito");
     }
   }, [mpCarregando, mpConectado, formaPagamento]);
-
-  // ========= REGRA: TRAVAR FORMULÁRIO SÓ QUANDO PIX GERADO E PENDENTE =========
-
-  const isPix = (formaPagamento || "").toLowerCase() === "pix";
-  const isCard = (formaPagamento || "").toLowerCase() === "cartaocredito";
-  const pixPendente = Boolean(resumoPedido?._id) && isPix && Boolean(qrCodeTexto || qrCodeUrl);
-  const travarFormulario = pixPendente || carregando;
 
   // ========= BUSCAR CLIENTE =========
 
@@ -432,9 +545,10 @@ const Checkout = () => {
       }
     };
 
-    if (!pixPendente) calcularFreteEndereco();
+    // só recalcula frete se não estiver com pix ativo travando
+    if (!pixAtivo) calcularFreteEndereco();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [endereco.rua, endereco.numero, endereco.bairro, endereco.cidade, endereco.estado, restaurante?._id]);
+  }, [endereco.rua, endereco.numero, endereco.bairro, endereco.cidade, endereco.estado, restaurante?._id, pixAtivo]);
 
   // ========= ENDEREÇO =========
 
@@ -466,12 +580,19 @@ const Checkout = () => {
     return data;
   };
 
-  const iniciarPollingPix = (pedidoId) => {
+  const iniciarPollingPix = (pedidoId, expiresAtParam) => {
     limparPollingPix();
-    const startedAt = Date.now();
 
     pollRef.current = setInterval(async () => {
       try {
+        // se expirou, para de verificar
+        const expiresAt = Number(expiresAtParam || pixExpiresAt || 0);
+        if (expiresAt && Date.now() >= expiresAt) {
+          limparPollingPix();
+          setVerificandoPix(false);
+          return;
+        }
+
         setVerificandoPix(true);
         const st = await consultarStatusPix(pedidoId);
         const status = st?.status || st?.payment_status || st?.statusPagamento || null;
@@ -485,13 +606,9 @@ const Checkout = () => {
           localStorage.removeItem("pix_pendente");
 
           toast("success", "Pagamento aprovado! ✅ Redirecionando...");
-          setTimeout(() => navigate(`/meus-pedidos/${telLimpo}`), 650);
+          const telGo = (telLimpo || localStorage.getItem(LS_CLIENT_PHONE_KEY) || "").replace(/\D/g, "");
+          setTimeout(() => navigate(`/meus-pedidos/${telGo}`), 650);
           return;
-        }
-
-        if (Date.now() - startedAt > 5 * 60 * 1000) {
-          limparPollingPix();
-          setVerificandoPix(false);
         }
       } catch {
         setVerificandoPix(false);
@@ -501,13 +618,36 @@ const Checkout = () => {
 
   const resetarPixParaEditar = () => {
     limparPollingPix();
+    limparCountdownPix();
     localStorage.removeItem("pix_pendente");
-    setResumoPedido({ itens: [], total: 0, frete: 0, _id: null });
+
+    setResumoPedido((prev) => ({ ...prev, itens: [], total: 0, frete: 0, _id: null }));
     setQrCodeTexto("");
     setQrCodeUrl("");
     setPixStatus(null);
     setVerificandoPix(false);
+
+    setPixCreatedAt(null);
+    setPixExpiresAt(null);
+    setPixTimeLeftMs(0);
+
     toast("info", "Você pode editar os dados e gerar um novo Pix.");
+  };
+
+  const cancelarPix = async () => {
+    // tenta cancelar no backend (se existir), mas não depende disso
+    const id = resumoPedido?._id;
+    try {
+      if (id) {
+        // 👇 ajuste a rota se você tiver uma específica de cancelamento
+        await axios.post(`${API_URL}/pedidos/${id}/cancelar`).catch(() => {});
+      }
+    } catch {
+      // ignore
+    } finally {
+      resetarPixParaEditar();
+      toast("success", "Pix cancelado. Você pode gerar um novo quando quiser.");
+    }
   };
 
   const copiarPix = async () => {
@@ -522,6 +662,13 @@ const Checkout = () => {
 
   const verificarPagamentoAgora = async () => {
     if (!resumoPedido?._id) return;
+
+    // se expirou, não faz sentido consultar
+    if (pixExpirado) {
+      toast("warning", "Pix expirado. Gere um novo Pix.");
+      return;
+    }
+
     try {
       setVerificandoPix(true);
       const st = await consultarStatusPix(resumoPedido._id);
@@ -536,9 +683,13 @@ const Checkout = () => {
         localStorage.removeItem("pix_pendente");
 
         toast("success", "Pagamento aprovado! ✅ Redirecionando...");
-        setTimeout(() => navigate(`/meus-pedidos/${telLimpo}`), 650);
+        const telGo = (telLimpo || localStorage.getItem(LS_CLIENT_PHONE_KEY) || "").replace(/\D/g, "");
+        setTimeout(() => navigate(`/meus-pedidos/${telGo}`), 650);
       } else {
-        toast("info", "Ainda não identificou como pago. Se já pagou, aguarde alguns segundos e tente novamente.");
+        toast(
+          "info",
+          "Ainda não identificou como pago. Se já pagou, aguarde alguns segundos e tente novamente."
+        );
       }
     } catch {
       toast("error", "Falha ao consultar status do Pix.");
@@ -549,18 +700,32 @@ const Checkout = () => {
 
   const handleSnackbarClose = () => setSnackbar((prev) => ({ ...prev, open: false }));
 
+  // ✅ total base (subtotal + frete)
   const totalPreviewCalculado = subtotalPreview + frete;
+
+  // ✅ taxa cartão só quando for cartão
+  const cardFeeValue = useMemo(() => {
+    if (!isCard) return 0;
+    return round2(totalPreviewCalculado * CARD_FEE_RATE);
+  }, [isCard, totalPreviewCalculado]);
+
+  const totalComTaxaCartao = useMemo(() => {
+    if (!isCard) return totalPreviewCalculado;
+    return round2(totalPreviewCalculado + cardFeeValue);
+  }, [isCard, totalPreviewCalculado, cardFeeValue]);
 
   const chipPix = useMemo(() => {
     const s = String(pixStatus || "").toLowerCase();
+
+    if (pixExpirado || s === "expired") return { label: "Expirado", color: "error" };
     if (!s) return null;
 
     if (s === "approved" || s === "paid" || s === "pago") return { label: "Pago ✅", color: "success" };
     if (s === "pending" || s === "in_process" || s === "authorized") return { label: "Aguardando", color: "warning" };
-    if (s === "rejected" || s === "cancelled" || s === "canceled") return { label: "Não aprovado", color: "error" };
+    if (s === "rejected" || s === "cancelled" || s === "canceled") return { label: "Cancelado", color: "error" };
 
     return { label: `Status: ${pixStatus}`, color: "default" };
-  }, [pixStatus]);
+  }, [pixStatus, pixExpirado]);
 
   const chipIcon = useMemo(() => {
     if (!chipPix) return undefined;
@@ -569,6 +734,13 @@ const Checkout = () => {
     if (chipPix.color === "error") return <ErrorOutlineIcon />;
     return undefined;
   }, [chipPix]);
+
+  const progressoExpiracao = useMemo(() => {
+    if (!pixTemPedido || !pixExpiresAt) return 0;
+    const left = pixExpiresAt - Date.now();
+    const value = (left / PIX_TTL_MS) * 100;
+    return clamp(value, 0, 100);
+  }, [pixTemPedido, pixExpiresAt]);
 
   // itens do resumo
   const resumoItens = useMemo(() => {
@@ -587,7 +759,7 @@ const Checkout = () => {
   const temMaisResumo = resumoItens.length > maxResumo;
 
   // ========= PAYLOAD BASE (reuso Pix/Cartão) =========
-  const montarPayloadPedidoBase = async () => {
+  const montarPayloadPedidoBase = async (paymentMethod = "Pix") => {
     const carrinho = JSON.parse(localStorage.getItem("carrinho") || "[]");
 
     if (!restaurante?._id) throw new Error("Restaurante não identificado. Volte para a vitrine.");
@@ -599,7 +771,7 @@ const Checkout = () => {
 
     const [lng, lat] = await geocodificarEndereco();
     const valorFrete = await calcularFrete(lng, lat);
-    const valorTotal = valorProdutos + valorFrete;
+    const valorTotalBase = valorProdutos + valorFrete;
 
     setFrete(valorFrete);
 
@@ -620,11 +792,30 @@ const Checkout = () => {
       quantity: 1,
     };
 
-    const carrinhoComFrete = [...carrinhoFormatado, freteItem];
+    let carrinhoFinal = [...carrinhoFormatado, freteItem];
+    let valorTotalFinal = valorTotalBase;
+
+    // ✅ adiciona taxa no cartão (3,8% sobre o total base)
+    if (String(paymentMethod).toLowerCase() === "cartaocredito") {
+      const taxa = round2(valorTotalBase * CARD_FEE_RATE);
+
+      const taxaItem = {
+        nome: "Taxa cartão (3,8%)",
+        quantidade: 1,
+        precoUnitario: taxa,
+        precoTotal: taxa,
+        amount: Math.round(taxa * 100),
+        description: "Taxa cartão (3,8%)",
+        quantity: 1,
+      };
+
+      carrinhoFinal = [...carrinhoFinal, taxaItem];
+      valorTotalFinal = round2(valorTotalBase + taxa);
+    }
 
     return {
-      carrinhoComFrete,
-      valorTotal,
+      carrinhoComFrete: carrinhoFinal,
+      valorTotal: valorTotalFinal,
       valorFrete,
       lat,
       lng,
@@ -640,7 +831,7 @@ const Checkout = () => {
 
     setCarregando(true);
     try {
-      const { carrinhoComFrete, valorTotal, valorFrete, lat, lng } = await montarPayloadPedidoBase();
+      const { carrinhoComFrete, valorTotal, valorFrete, lat, lng } = await montarPayloadPedidoBase("Pix");
 
       const resp = await axios.post(`${API_URL}/pedidos/`, {
         itens: carrinhoComFrete,
@@ -674,10 +865,19 @@ const Checkout = () => {
         toast("error", "Pedido criado, mas não recebi o ID do pedido no retorno.");
         return;
       }
+
+      // ✅ sempre salva o telefone ao criar pedido
+      if (telLimpo && telLimpo.length >= 10) {
+        localStorage.setItem(LS_CLIENT_PHONE_KEY, telLimpo);
+      }
+
       if (!qrText && !qrBase64) {
         toast("error", "Pedido criado, mas não recebi o QR Code Pix.");
         return;
       }
+
+      const createdAt = Date.now();
+      const expiresAt = createdAt + PIX_TTL_MS;
 
       setResumoPedido({
         itens: carrinhoComFrete,
@@ -690,22 +890,29 @@ const Checkout = () => {
       setQrCodeUrl(qrBase64);
       setPixStatus("pending");
 
+      setPixCreatedAt(createdAt);
+      setPixExpiresAt(expiresAt);
+      setPixTimeLeftMs(expiresAt - Date.now());
+
       localStorage.setItem(
         "pix_pendente",
         JSON.stringify({
           _id: pedidoId,
+          telefone: telLimpo, // ✅ salva também dentro do pix_pendente
           total: valorTotal,
           frete: valorFrete,
           qrCodeTexto: qrText,
           qrCodeUrl: qrBase64,
           pixStatus: "pending",
+          pixCreatedAt: createdAt,
+          pixExpiresAt: expiresAt,
         })
       );
 
       setResumoOpen(true);
       setPixCodeOpen(true);
       toast("info", "Pix gerado! Faça o pagamento no app do banco.");
-      iniciarPollingPix(pedidoId);
+      iniciarPollingPix(pedidoId, expiresAt);
     } catch (err) {
       console.error("Erro backend:", err?.response?.data || err);
       toast("error", err?.response?.data?.message || err?.message || "Erro ao finalizar pedido.");
@@ -718,7 +925,7 @@ const Checkout = () => {
   const finalizarCartao = async ({ token, payment_method_id, issuer_id, installments, payer }) => {
     setCarregando(true);
     try {
-      const { carrinhoComFrete, valorTotal, valorFrete, lat, lng } = await montarPayloadPedidoBase();
+      const { carrinhoComFrete, valorTotal, valorFrete, lat, lng } = await montarPayloadPedidoBase("CartaoCredito");
 
       const resp = await axios.post(`${API_URL}/pedidos/`, {
         itens: carrinhoComFrete,
@@ -743,17 +950,23 @@ const Checkout = () => {
           token,
           payment_method_id,
           issuer_id,
-          installments,
+          installments: 1, // ✅ sempre à vista
           payer,
         },
       });
+
+      // ✅ sempre salva o telefone ao criar pedido no cartão
+      if (telLimpo && telLimpo.length >= 10) {
+        localStorage.setItem(LS_CLIENT_PHONE_KEY, telLimpo);
+      }
 
       const status = String(resp.data?.statusPagamento || "").toLowerCase();
 
       if (status === "approved" || status === "paid") {
         localStorage.removeItem("carrinho");
         toast("success", "Pagamento aprovado! ✅ Redirecionando...");
-        setTimeout(() => navigate(`/meus-pedidos/${telLimpo}`), 650);
+        const telGo = (telLimpo || localStorage.getItem(LS_CLIENT_PHONE_KEY) || "").replace(/\D/g, "");
+        setTimeout(() => navigate(`/meus-pedidos/${telGo}`), 650);
         return;
       }
 
@@ -777,11 +990,12 @@ const Checkout = () => {
       const token = formData?.token;
       const payment_method_id = formData?.payment_method_id;
       const issuer_id = formData?.issuer_id;
-      const installments = formData?.installments || 1;
+
+      // ✅ sempre à vista (1x)
+      const installments = 1;
 
       const payerEmail =
-        formData?.payer?.email ||
-        (telLimpo ? `${telLimpo}@movyo.com` : "comprador@movyo.com");
+        formData?.payer?.email || (telLimpo ? `${telLimpo}@movyo.com` : "comprador@movyo.com");
 
       const payer = {
         email: payerEmail,
@@ -824,7 +1038,7 @@ const Checkout = () => {
             </Box>
           </Box>
 
-          <Button color="inherit" onClick={() => navigate("/carrinho")} sx={{ textTransform: "none" }}>
+          <Button color="inherit" onClick={() => navigate("/p/carrinho")} sx={{ textTransform: "none" }}>
             Voltar
           </Button>
         </Toolbar>
@@ -835,217 +1049,21 @@ const Checkout = () => {
           Finalizar Pedido
         </Typography>
 
-        {/* PIX TOP CARD */}
-        {resumoPedido._id && isPix && (
-          <Paper
-            elevation={0}
-            sx={{
-              mb: 2,
-              p: 1.5,
-              borderRadius: 3,
-              border: "1px solid #eee",
-              background: "linear-gradient(180deg, rgba(255,75,139,0.10) 0%, rgba(255,179,71,0.12) 100%)",
-            }}
-          >
-            <Stack direction="row" alignItems="center" justifyContent="space-between" gap={1}>
-              <Stack spacing={0.25} minWidth={0}>
-                <Stack direction="row" alignItems="center" gap={1}>
-                  <QrCode2Icon fontSize="small" />
-                  <Typography fontWeight={900} noWrap>
-                    Pix do pedido
-                  </Typography>
-                  {chipPix && (
-                    <Chip
-                      label={chipPix.label}
-                      color={chipPix.color}
-                      variant="filled"
-                      size="small"
-                      sx={{ fontWeight: 900 }}
-                      icon={chipIcon}
-                    />
-                  )}
-                  {verificandoPix && <CircularProgress size={16} />}
-                </Stack>
-
-                <Typography variant="caption" color="text.secondary" noWrap>
-                  Pedido <b>{resumoPedido._id}</b> • Total <b>R$ {money(resumoPedido.total || totalPreviewCalculado)}</b>
-                </Typography>
-              </Stack>
-
-              <Stack direction="row" spacing={1} alignItems="center" flexShrink={0}>
-                <Button
-                  variant="contained"
-                  size="small"
-                  onClick={verificarPagamentoAgora}
-                  disabled={verificandoPix}
-                  sx={{
-                    textTransform: "none",
-                    fontWeight: 900,
-                    borderRadius: 2,
-                    background: "linear-gradient(90deg,#ff4b8b,#ff7a3d,#ffb347)",
-                    "&:hover": { opacity: 0.95, background: "linear-gradient(90deg,#ff4b8b,#ff7a3d,#ffb347)" },
-                  }}
-                >
-                  {verificandoPix ? <CircularProgress size={18} /> : "Verificar"}
-                </Button>
-
-                <Tooltip title="Copiar código Pix">
-                  <span>
-                    <IconButton
-                      onClick={copiarPix}
-                      disabled={!qrCodeTexto}
-                      size="small"
-                      sx={{
-                        bgcolor: "rgba(255,255,255,0.65)",
-                        border: "1px solid rgba(0,0,0,0.06)",
-                        "&:hover": { bgcolor: "rgba(255,255,255,0.85)" },
-                      }}
-                    >
-                      <ContentCopyIcon fontSize="small" />
-                    </IconButton>
-                  </span>
-                </Tooltip>
-
-                <Tooltip title={pixCodeOpen ? "Ocultar QR / código" : "Mostrar QR / código"}>
-                  <IconButton
-                    size="small"
-                    onClick={() => setPixCodeOpen((v) => !v)}
-                    sx={{
-                      bgcolor: "rgba(255,255,255,0.65)",
-                      border: "1px solid rgba(0,0,0,0.06)",
-                      "&:hover": { bgcolor: "rgba(255,255,255,0.85)" },
-                    }}
-                  >
-                    {pixCodeOpen ? <ExpandLessIcon fontSize="small" /> : <ExpandMoreIcon fontSize="small" />}
-                  </IconButton>
-                </Tooltip>
-              </Stack>
-            </Stack>
-
-            <Collapse in={pixCodeOpen} timeout={250}>
-              <Divider sx={{ my: 1.2 }} />
-
-              <Grid container spacing={1.2} alignItems="stretch">
-                <Grid item xs={12} sm={5}>
-                  <Paper
-                    variant="outlined"
-                    sx={{
-                      height: "100%",
-                      p: 1.2,
-                      borderRadius: 2.5,
-                      bgcolor: "#fff",
-                      borderColor: "rgba(255,122,61,0.25)",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      minHeight: 160,
-                    }}
-                  >
-                    {qrCodeUrl ? (
-                      <img
-                        src={`data:image/png;base64,${qrCodeUrl}`}
-                        alt="QR Code Pix"
-                        style={{ width: "100%", maxWidth: 160, height: "auto", objectFit: "contain", display: "block" }}
-                      />
-                    ) : (
-                      <Box textAlign="center">
-                        <Typography variant="subtitle2" fontWeight={900}>
-                          QR indisponível
-                        </Typography>
-                        <Typography variant="caption" color="text.secondary">
-                          Use o botão de copiar.
-                        </Typography>
-                      </Box>
-                    )}
-                  </Paper>
-                </Grid>
-
-                <Grid item xs={12} sm={7}>
-                  <Paper
-                    variant="outlined"
-                    sx={{
-                      height: "100%",
-                      p: 1.2,
-                      borderRadius: 2.5,
-                      bgcolor: "#fff",
-                      borderColor: "rgba(255,122,61,0.25)",
-                    }}
-                  >
-                    <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={1}>
-                      <Typography variant="subtitle2" fontWeight={900}>
-                        Código Pix
-                      </Typography>
-
-                      <Button
-                        size="small"
-                        variant="outlined"
-                        onClick={copiarPix}
-                        disabled={!qrCodeTexto}
-                        startIcon={<ContentCopyIcon fontSize="small" />}
-                        sx={{ textTransform: "none", fontWeight: 900, borderRadius: 2 }}
-                      >
-                        Copiar
-                      </Button>
-                    </Stack>
-
-                    <Box
-                      sx={{
-                        mt: 1,
-                        p: 1,
-                        borderRadius: 2,
-                        border: "1px solid rgba(0,0,0,0.08)",
-                        bgcolor: "#fafafa",
-                        fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
-                        fontSize: 12,
-                        lineHeight: 1.4,
-                        maxHeight: 86,
-                        overflow: "hidden",
-                        wordBreak: "break-all",
-                      }}
-                    >
-                      {qrCodeTexto || "—"}
-                    </Box>
-
-                    <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mt: 1 }}>
-                      <Button size="small" disabled />
-                      <Button
-                        size="small"
-                        onClick={() => setConfirmEditarPix(true)}
-                        startIcon={<EditIcon fontSize="small" />}
-                        sx={{ textTransform: "none", fontWeight: 900 }}
-                      >
-                        Editar dados / gerar novo Pix
-                      </Button>
-                    </Stack>
-
-                    <Alert
-                      severity="info"
-                      sx={{
-                        mt: 1,
-                        py: 0.5,
-                        borderRadius: 2,
-                        backgroundColor: "rgba(255,255,255,0.75)",
-                      }}
-                    >
-                      Confirmou? Se o status não atualizar, toque em <b>Verificar</b>.
-                    </Alert>
-                  </Paper>
-                </Grid>
-              </Grid>
-            </Collapse>
-          </Paper>
-        )}
-
         <Paper sx={{ p: 2.2, borderRadius: 3, boxShadow: "0px 2px 8px rgba(15, 23, 42, 0.08)" }}>
           {/* DADOS DO CLIENTE */}
           <TextField
             label="Telefone"
             fullWidth
             margin="normal"
-            value={telefone}
             onChange={(e) => {
-              setTelefone(formatarTelefone(e.target.value));
+              const formatted = formatarTelefone(e.target.value);
+              setTelefone(formatted);
               setClienteCarregado(false);
+
+              const onlyDigits = formatted.replace(/\D/g, "");
+              if (onlyDigits.length >= 10) {
+                localStorage.setItem(LS_CLIENT_PHONE_KEY, onlyDigits);
+              }
             }}
             onBlur={buscarCliente}
             disabled={travarFormulario}
@@ -1103,7 +1121,7 @@ const Checkout = () => {
             onChange={(e) => setEndereco({ ...endereco, apelido: e.target.value })}
             disabled={travarFormulario}
           />
-
+  
           <TextField
             label="CEP"
             fullWidth
@@ -1262,15 +1280,308 @@ const Checkout = () => {
                     R$ {money(frete)}
                   </Typography>
                 </Stack>
+
+                {/* ✅ taxa do cartão */}
+                {isCard && (
+                  <Stack direction="row" justifyContent="space-between">
+                    <Typography variant="body2" color="text.secondary">
+                      Taxa cartão (3,8%)
+                    </Typography>
+                    <Typography variant="body2" fontWeight={800}>
+                      R$ {money(cardFeeValue)}
+                    </Typography>
+                  </Stack>
+                )}
+
                 <Stack direction="row" justifyContent="space-between" sx={{ mt: 0.4 }}>
                   <Typography variant="body1" fontWeight={900}>
                     Total
                   </Typography>
                   <Typography variant="body1" fontWeight={900}>
-                    R$ {money(totalPreviewCalculado)}
+                    R$ {money(isCard ? totalComTaxaCartao : totalPreviewCalculado)}
                   </Typography>
                 </Stack>
               </Stack>
+            </Paper>
+          )}
+
+          {/* PIX TOP CARD */}
+          {resumoPedido._id && isPix && (
+            <Paper
+              elevation={0}
+              sx={{
+                mb: 2,
+                p: 1.5,
+                borderRadius: 3,
+                border: "1px solid #eee",
+                background:
+                  "linear-gradient(180deg, rgba(255,75,139,0.10) 0%, rgba(255,179,71,0.12) 100%)",
+              }}
+            >
+              <Stack direction="row" alignItems="center" justifyContent="space-between" gap={1}>
+                <Stack spacing={0.25} minWidth={0}>
+                  <Stack direction="row" alignItems="center" gap={1} flexWrap="wrap">
+                    <QrCode2Icon fontSize="small" />
+                    <Typography fontWeight={900} noWrap>
+                      Pix do pedido
+                    </Typography>
+                    {chipPix && (
+                      <Chip
+                        label={chipPix.label}
+                        color={chipPix.color}
+                        variant="filled"
+                        size="small"
+                        sx={{ fontWeight: 900 }}
+                        icon={chipIcon}
+                      />
+                    )}
+                    {verificandoPix && <CircularProgress size={16} />}
+                  </Stack>
+
+                  <Typography variant="caption" color="text.secondary" noWrap>
+                    Pedido <b>{resumoPedido._id}</b> • Total{" "}
+                    <b>R$ {money(resumoPedido.total || totalPreviewCalculado)}</b>
+                  </Typography>
+                </Stack>
+
+                <Stack direction="row" spacing={1} alignItems="center" flexShrink={0}>
+                  <Button
+                    variant="contained"
+                    size="small"
+                    onClick={verificarPagamentoAgora}
+                    disabled={verificandoPix || pixExpirado}
+                    sx={{
+                      textTransform: "none",
+                      fontWeight: 900,
+                      borderRadius: 2,
+                      background: "linear-gradient(90deg,#ff4b8b,#ff7a3d,#ffb347)",
+                      "&:hover": {
+                        opacity: 0.95,
+                        background: "linear-gradient(90deg,#ff4b8b,#ff7a3d,#ffb347)",
+                      },
+                    }}
+                  >
+                    {verificandoPix ? <CircularProgress size={18} /> : "Verificar"}
+                  </Button>
+
+                  <Tooltip title="Copiar código Pix">
+                    <span>
+                      <IconButton
+                        onClick={copiarPix}
+                        disabled={!qrCodeTexto || pixExpirado}
+                        size="small"
+                        sx={{
+                          bgcolor: "rgba(255,255,255,0.65)",
+                          border: "1px solid rgba(0,0,0,0.06)",
+                          "&:hover": { bgcolor: "rgba(255,255,255,0.85)" },
+                        }}
+                      >
+                        <ContentCopyIcon fontSize="small" />
+                      </IconButton>
+                    </span>
+                  </Tooltip>
+
+                  <Tooltip title="Cancelar Pix">
+                    <span>
+                      <IconButton
+                        onClick={() => setConfirmCancelarPix(true)}
+                        size="small"
+                        sx={{
+                          bgcolor: "rgba(255,255,255,0.65)",
+                          border: "1px solid rgba(0,0,0,0.06)",
+                          "&:hover": { bgcolor: "rgba(255,255,255,0.85)" },
+                        }}
+                      >
+                        <CancelIcon fontSize="small" />
+                      </IconButton>
+                    </span>
+                  </Tooltip>
+
+                  <Tooltip title={pixCodeOpen ? "Ocultar QR / código" : "Mostrar QR / código"}>
+                    <IconButton
+                      size="small"
+                      onClick={() => setPixCodeOpen((v) => !v)}
+                      sx={{
+                        bgcolor: "rgba(255,255,255,0.65)",
+                        border: "1px solid rgba(0,0,0,0.06)",
+                        "&:hover": { bgcolor: "rgba(255,255,255,0.85)" },
+                      }}
+                    >
+                      {pixCodeOpen ? <ExpandLessIcon fontSize="small" /> : <ExpandMoreIcon fontSize="small" />}
+                    </IconButton>
+                  </Tooltip>
+                </Stack>
+              </Stack>
+
+              {/* ✅ expiração visual */}
+              {pixExpiresAt && (
+                <Box sx={{ mt: 1 }}>
+                  <Stack direction="row" alignItems="center" justifyContent="space-between">
+                    <Stack direction="row" alignItems="center" spacing={0.8}>
+                      <AccessTimeIcon fontSize="small" />
+                      <Typography variant="caption" fontWeight={800}>
+                        {pixExpirado ? "Pix expirado" : "Expira em"}
+                      </Typography>
+                    </Stack>
+
+                    <Typography
+                      variant="caption"
+                      fontWeight={900}
+                      sx={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" }}
+                    >
+                      {pixExpirado ? "00:00" : formatMsToMMSS(pixTimeLeftMs)}
+                    </Typography>
+                  </Stack>
+
+                  <LinearProgress
+                    variant="determinate"
+                    value={progressoExpiracao}
+                    sx={{
+                      mt: 0.6,
+                      height: 9,
+                      borderRadius: 999,
+                      bgcolor: "rgba(255,255,255,0.6)",
+                    }}
+                  />
+
+                  {pixExpirado && (
+                    <Alert severity="warning" sx={{ mt: 1, borderRadius: 2 }}>
+                      Esse Pix expirou. Toque em <b>Editar dados / gerar novo Pix</b> ou cancele e gere outro.
+                    </Alert>
+                  )}
+                </Box>
+              )}
+
+              <Collapse in={pixCodeOpen} timeout={250}>
+                <Divider sx={{ my: 1.2 }} />
+
+                <Grid container spacing={1.2} alignItems="stretch">
+                  <Grid item xs={12} sm={5}>
+                    <Paper
+                      variant="outlined"
+                      sx={{
+                        height: "100%",
+                        p: 1.2,
+                        borderRadius: 2.5,
+                        bgcolor: "#fff",
+                        borderColor: "rgba(255,122,61,0.25)",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        minHeight: 160,
+                        opacity: pixExpirado ? 0.6 : 1,
+                      }}
+                    >
+                      {qrCodeUrl ? (
+                        <img
+                          src={`data:image/png;base64,${qrCodeUrl}`}
+                          alt="QR Code Pix"
+                          style={{
+                            width: "100%",
+                            maxWidth: 160,
+                            height: "auto",
+                            objectFit: "contain",
+                            display: "block",
+                          }}
+                        />
+                      ) : (
+                        <Box textAlign="center">
+                          <Typography variant="subtitle2" fontWeight={900}>
+                            QR indisponível
+                          </Typography>
+                          <Typography variant="caption" color="text.secondary">
+                            Use o botão de copiar.
+                          </Typography>
+                        </Box>
+                      )}
+                    </Paper>
+                  </Grid>
+
+                  <Grid item xs={12} sm={7}>
+                    <Paper
+                      variant="outlined"
+                      sx={{
+                        height: "100%",
+                        p: 1.2,
+                        borderRadius: 2.5,
+                        bgcolor: "#fff",
+                        borderColor: "rgba(255,122,61,0.25)",
+                        opacity: pixExpirado ? 0.9 : 1,
+                      }}
+                    >
+                      <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={1}>
+                        <Typography variant="subtitle2" fontWeight={900}>
+                          Código Pix
+                        </Typography>
+
+                        <Button
+                          size="small"
+                          variant="outlined"
+                          onClick={copiarPix}
+                          disabled={!qrCodeTexto || pixExpirado}
+                          startIcon={<ContentCopyIcon fontSize="small" />}
+                          sx={{ textTransform: "none", fontWeight: 900, borderRadius: 2 }}
+                        >
+                          Copiar
+                        </Button>
+                      </Stack>
+
+                      <Box
+                        sx={{
+                          mt: 1,
+                          p: 1,
+                          borderRadius: 2,
+                          border: "1px solid rgba(0,0,0,0.08)",
+                          bgcolor: "#fafafa",
+                          fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+                          fontSize: 12,
+                          lineHeight: 1.4,
+                          maxHeight: 86,
+                          overflow: "hidden",
+                          wordBreak: "break-all",
+                          opacity: pixExpirado ? 0.65 : 1,
+                        }}
+                      >
+                        {qrCodeTexto || "—"}
+                      </Box>
+
+                      <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mt: 1 }}>
+                        <Button
+                          size="small"
+                          color="error"
+                          variant="outlined"
+                          onClick={() => setConfirmCancelarPix(true)}
+                          startIcon={<CancelIcon fontSize="small" />}
+                          sx={{ textTransform: "none", fontWeight: 900, borderRadius: 2 }}
+                        >
+                          Cancelar
+                        </Button>
+
+                        <Button
+                          size="small"
+                          onClick={() => setConfirmEditarPix(true)}
+                          startIcon={<EditIcon fontSize="small" />}
+                          sx={{ textTransform: "none", fontWeight: 900 }}
+                        >
+                          Editar dados / gerar novo Pix
+                        </Button>
+                      </Stack>
+
+                      <Alert
+                        severity="info"
+                        sx={{
+                          mt: 1,
+                          py: 0.5,
+                          borderRadius: 2,
+                          backgroundColor: "rgba(255,255,255,0.75)",
+                        }}
+                      >
+                        Confirmou? Se o status não atualizar, toque em <b>Verificar</b>.
+                      </Alert>
+                    </Paper>
+                  </Grid>
+                </Grid>
+              </Collapse>
             </Paper>
           )}
 
@@ -1316,7 +1627,7 @@ const Checkout = () => {
                       label={
                         <Box display="flex" alignItems="center" gap={1}>
                           <CreditCardIcon color={formaPagamento === "CartaoCredito" ? "primary" : "action"} />
-                          <Typography>Cartão de Crédito</Typography>
+                          <Typography>Cartão de Crédito (à vista + 3,8%)</Typography>
                         </Box>
                       }
                     />
@@ -1340,7 +1651,10 @@ const Checkout = () => {
                           fontWeight: 900,
                           borderRadius: 2,
                           background: "linear-gradient(90deg,#ff4b8b,#ff7a3d,#ffb347)",
-                          "&:hover": { opacity: 0.95, background: "linear-gradient(90deg,#ff4b8b,#ff7a3d,#ffb347)" },
+                          "&:hover": {
+                            opacity: 0.95,
+                            background: "linear-gradient(90deg,#ff4b8b,#ff7a3d,#ffb347)",
+                          },
                         }}
                       >
                         {carregando ? <CircularProgress size={22} /> : "Gerar Pix"}
@@ -1395,28 +1709,50 @@ const Checkout = () => {
                       }}
                     >
                       <Typography fontWeight={900} sx={{ mb: 1 }}>
-                        Pagamento com cartão
+                        Pagamento com cartão (à vista)
                       </Typography>
 
-                      <CardPayment
-                        initialization={{
-                          amount: Number(totalPreviewCalculado || 0),
-                        }}
-                        customization={{
-                          visual: {
-                            hideFormTitle: true,
-                            // ✅ NÃO esconder o botão: o brick gerencia submit corretamente
-                            hidePaymentButton: false,
+                      {/* ✅ wrapper para esconder parcela/quantitativo de parcelas */}
+                      <Box
+                        sx={{
+                          '& [name*="installment"], & [id*="installment"], & [class*="installment"]': {
+                            display: "none !important",
                           },
                         }}
-                        onSubmit={async (formData) => {
-                          await onSubmitCartao(formData);
-                        }}
-                        onError={(err) => {
-                          console.error("MP CardPayment error:", err);
-                          toast("error", "Erro ao carregar formulário do cartão.");
-                        }}
-                      />
+                      >
+<CardPayment
+  key={`mp-card-${Number(totalComTaxaCartao || 0)}`} // ✅ força recriar o Brick quando o total muda
+  initialization={{
+    amount: Number(totalComTaxaCartao || 0), // ✅ valor já com taxa do cartão (3,8%)
+    // payer opcional aqui (você já monta no onSubmit), mas pode ajudar:
+    payer: {
+      email: telLimpo ? `${telLimpo}@movyo.com` : "comprador@movyo.com",
+    },
+  }}
+  customization={{
+    paymentMethods: {
+      minInstallments: 1, // ✅ só à vista
+      maxInstallments: 1, // ✅ só à vista
+      types: {
+        excluded: ["debit_card"], // opcional: se quiser só crédito
+      },
+    },
+    visual: {
+      hideFormTitle: true,
+      hidePaymentButton: false,
+    },
+  }}
+  onSubmit={async (formData) => {
+    // ✅ garante que mesmo se vier diferente, você manda 1 pro backend
+    await onSubmitCartao({ ...formData, installments: 1 });
+  }}
+  onError={(err) => {
+    console.error("MP CardPayment error:", err);
+    toast("error", "Erro ao carregar formulário do cartão.");
+  }}
+/>
+
+                      </Box>
 
                       <Alert severity="info" sx={{ mt: 1, borderRadius: 2 }}>
                         Dica: preencher <b>e-mail</b> e <b>CPF</b> melhora aprovação.
@@ -1428,8 +1764,8 @@ const Checkout = () => {
             </Box>
           )}
 
-          {/* Se Pix pendente */}
-          {pixPendente && (
+          {/* Se Pix ativo */}
+          {pixAtivo && (
             <Alert
               severity="info"
               sx={{
@@ -1440,6 +1776,13 @@ const Checkout = () => {
             >
               Pagamento Pix pendente. Você pode copiar o código e pagar no app do banco. Quando pagar, o status atualiza
               automaticamente — ou toque em <b>Verificar</b>.
+            </Alert>
+          )}
+
+          {/* Se Pix expirado */}
+          {pixTemPedido && pixExpirado && (
+            <Alert severity="warning" sx={{ mt: 2, borderRadius: 2 }}>
+              Pix expirado. Você já pode editar os dados e gerar um novo Pix.
             </Alert>
           )}
         </Paper>
@@ -1472,6 +1815,33 @@ const Checkout = () => {
             }}
           >
             Destravar e editar
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* CONFIRMAR: CANCELAR PIX */}
+      <Dialog open={confirmCancelarPix} onClose={() => setConfirmCancelarPix(false)}>
+        <DialogTitle>Cancelar Pix?</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary">
+            Isso vai cancelar o Pix pendente (no navegador) e destravar os campos. Se houver rota de cancelamento no
+            backend, o app tentará cancelar também.
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setConfirmCancelarPix(false)} sx={{ textTransform: "none" }}>
+            Voltar
+          </Button>
+          <Button
+            onClick={async () => {
+              setConfirmCancelarPix(false);
+              await cancelarPix();
+            }}
+            color="error"
+            variant="contained"
+            sx={{ textTransform: "none", fontWeight: 900, borderRadius: 2 }}
+          >
+            Cancelar Pix
           </Button>
         </DialogActions>
       </Dialog>

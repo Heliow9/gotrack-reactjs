@@ -26,6 +26,9 @@ import RemoveIcon from "@mui/icons-material/Remove";
 const DEFAULT_IMAGE_URL =
   "https://cdn-icons-png.flaticon.com/512/1404/1404945.png";
 
+const CART_KEY = "carrinho";
+const CART_OWNER_KEY = "carrinho_restaurante_id"; // ✅ dono do carrinho (restaurante)
+
 function formatBRL(value) {
   const num = Number(value || 0);
   return num.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -38,6 +41,29 @@ function isPizzaProduto(produto) {
   if (produto.permiteSabores === true) return true;
   if ((produto.saboresDisponiveis || []).length > 0) return true;
   return false;
+}
+
+// ✅ pega restaurante atual do localStorage (mesmo padrão do seu Checkout)
+function getRestauranteAtual() {
+  try {
+    const raw = JSON.parse(localStorage.getItem("restauranteSelecionado") || "null");
+    return raw?.restaurante ?? raw;
+  } catch {
+    return null;
+  }
+}
+
+function readCart() {
+  try {
+    const arr = JSON.parse(localStorage.getItem(CART_KEY) || "[]");
+    return Array.isArray(arr) ? arr : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeCart(items) {
+  localStorage.setItem(CART_KEY, JSON.stringify(Array.isArray(items) ? items : []));
 }
 
 const ModalProduto = ({ open, onClose, produto }) => {
@@ -54,15 +80,6 @@ const ModalProduto = ({ open, onClose, produto }) => {
   const isPizza = isPizzaProduto(produto);
   const saboresDisp = produto?.saboresDisponiveis || [];
 
-  /**
-   * ✅ maxSabores:
-   * - se veio do Publico (categoria.maxSabores/item.maxSabores) respeita
-   * - se pizzaMultisabor -> 2
-   * - caso contrário -> 1
-   *
-   * ⚠️ IMPORTANTE: NÃO usar "saboresLen>1 => 2" porque pizza normal pode ter vários sabores cadastrados,
-   * mas ainda ser "1 sabor" (pizza tradicional).
-   */
   const maxSabores = useMemo(() => {
     if (!produto) return 1;
 
@@ -76,7 +93,6 @@ const ModalProduto = ({ open, onClose, produto }) => {
 
   const isPizzaMultiSabor = isPizza && maxSabores > 1;
 
-  // Reset de estado sempre que abrir um produto novo
   useEffect(() => {
     if (!open || !produto) return;
 
@@ -89,36 +105,27 @@ const ModalProduto = ({ open, onClose, produto }) => {
     setQuantidade(1);
     setValidationError("");
 
-    // ✅ auto selecionar sabor único SOMENTE quando maxSabores === 1 e só existe 1 sabor disponível
     if (isPizza && maxSabores === 1 && saboresDisp.length === 1) {
       setSaboresSelecionados([saboresDisp[0].nome]);
     }
 
-    // Auto seleção de extras obrigatórios / únicos
     const autoSelectExtras = {};
     produto?.tiposExtras?.forEach((tipo) => {
       if (tipo.tipoSelecion === "unico" && tipo.itens?.length === 1) {
         autoSelectExtras[tipo.nome] = [tipo.itens[0]];
       }
-      if (
-        tipo.tipoSelecion === "multiplo" &&
-        tipo.obrigatorio &&
-        tipo.minimoSelecionados > 0
-      ) {
-        autoSelectExtras[tipo.nome] =
-          tipo.itens?.slice(0, tipo.minimoSelecionados) || [];
+      if (tipo.tipoSelecion === "multiplo" && tipo.obrigatorio && tipo.minimoSelecionados > 0) {
+        autoSelectExtras[tipo.nome] = tipo.itens?.slice(0, tipo.minimoSelecionados) || [];
       }
     });
     setTiposExtrasSelecionados(autoSelectExtras);
   }, [open, produto, isPizza, maxSabores, saboresDisp.length]);
 
-  // Cálculo do preço total (memoizado)
   const precoTotal = useMemo(() => {
     if (!produto) return 0;
 
     let total = Number(produto.precoBase || 0);
 
-    // ✅ PIZZA: calcula pelo maior ou média dos sabores
     if (isPizza && saboresSelecionados.length > 0) {
       const precos = saboresSelecionados
         .map((nome) => {
@@ -138,25 +145,21 @@ const ModalProduto = ({ open, onClose, produto }) => {
       }
     }
 
-    // Borda
     if (bordaSelecionada !== "nenhum") {
       const borda = produto.bordasDisponiveis?.find((b) => b.nome === bordaSelecionada);
       total += Number(borda?.preco || 0);
     }
 
-    // Adicional
     if (adicionalSelecionado !== "nenhum") {
       const adicional = produto.adicionais?.find((a) => a.nome === adicionalSelecionado);
       total += Number(adicional?.preco || 0);
     }
 
-    // Complementos
     complementosSelecionados.forEach((nome) => {
       const comp = produto.complementos?.find((c) => c.nome === nome);
       total += Number(comp?.preco || 0);
     });
 
-    // Tipos Extras
     Object.entries(tiposExtrasSelecionados).forEach(([, itens]) => {
       if (Array.isArray(itens)) {
         for (const item of itens) total += Number(item?.preco || 0);
@@ -179,16 +182,13 @@ const ModalProduto = ({ open, onClose, produto }) => {
 
   if (!produto) return null;
 
-  // Validação
   const validate = () => {
     if (isPizza) {
-      // se é multisabor, exige exatamente maxSabores
       if (maxSabores > 1) {
         if (saboresSelecionados.length !== maxSabores) {
           return `Selecione exatamente ${maxSabores} sabor(es).`;
         }
       } else {
-        // pizza 1 sabor: exige 1 quando existem sabores cadastrados
         if (saboresDisp.length >= 1 && saboresSelecionados.length !== 1) {
           return "Selecione o sabor da pizza.";
         }
@@ -219,11 +219,37 @@ const ModalProduto = ({ open, onClose, produto }) => {
       return;
     }
 
+    // ✅ restaurante atual (pra não misturar carrinho)
+    const rest = getRestauranteAtual();
+    const restId = rest?._id || null;
+
+    // ✅ se trocou de restaurante, zera carrinho automaticamente
+    const owner = String(localStorage.getItem(CART_OWNER_KEY) || "");
+    let carrinhoAtual = readCart();
+
+    if (restId) {
+      // se já tem dono e é diferente -> zera
+      if (owner && owner !== restId) {
+        carrinhoAtual = [];
+        localStorage.removeItem("pix_pendente"); // opcional: evita pix pendente de outra loja
+      }
+      // se carrinho antigo sem owner -> zera (pra não vazar pra outra loja)
+      if (!owner && carrinhoAtual.length > 0) {
+        carrinhoAtual = [];
+        localStorage.removeItem("pix_pendente");
+      }
+
+      localStorage.setItem(CART_OWNER_KEY, restId);
+    }
+
     const pedido = {
       produtoId: produto._id,
       nome: produto.nome,
       imagem: produto.imagem,
       categoriaType: isPizza ? "pizza" : produto.categoriaType || "simple_item",
+
+      // ✅ amarra item ao restaurante
+      restauranteId: restId,
 
       // pizza
       pizzaMultisabor: Boolean(produto.pizzaMultisabor),
@@ -252,9 +278,8 @@ const ModalProduto = ({ open, onClose, produto }) => {
       precoTotal: Number(precoTotal || 0),
     };
 
-    const carrinhoAtual = JSON.parse(localStorage.getItem("carrinho")) || [];
     carrinhoAtual.push(pedido);
-    localStorage.setItem("carrinho", JSON.stringify(carrinhoAtual));
+    writeCart(carrinhoAtual);
 
     setShowSnackbar(true);
     onClose();
@@ -351,13 +376,10 @@ const ModalProduto = ({ open, onClose, produto }) => {
                 Sabores {isPizzaMultiSabor ? `(escolha exatamente ${maxSabores})` : ""}
               </Typography>
 
-              {/* ✅ regra: maxSabores===1 => radio; maxSabores>1 => checkbox */}
               {maxSabores === 1 ? (
                 <RadioGroup
                   value={saboresSelecionados[0] || ""}
-                  onChange={(e) =>
-                    setSaboresSelecionados(e.target.value ? [e.target.value] : [])
-                  }
+                  onChange={(e) => setSaboresSelecionados(e.target.value ? [e.target.value] : [])}
                 >
                   {saboresDisp.map((s, i) => (
                     <FormControlLabel
@@ -383,9 +405,7 @@ const ModalProduto = ({ open, onClose, produto }) => {
                             disabled={desabilitado}
                             onChange={() => {
                               if (checked) {
-                                setSaboresSelecionados((prev) =>
-                                  prev.filter((n) => n !== s.nome)
-                                );
+                                setSaboresSelecionados((prev) => prev.filter((n) => n !== s.nome));
                               } else if (saboresSelecionados.length < maxSabores) {
                                 setSaboresSelecionados((prev) => [...prev, s.nome]);
                               }
@@ -467,9 +487,7 @@ const ModalProduto = ({ open, onClose, produto }) => {
                       }));
                     }}
                   >
-                    {!tipo.obrigatorio && (
-                      <FormControlLabel value="" control={<Radio />} label="Nenhum" />
-                    )}
+                    {!tipo.obrigatorio && <FormControlLabel value="" control={<Radio />} label="Nenhum" />}
                     {tipo.itens.map((item, i) => (
                       <FormControlLabel
                         key={i}
@@ -574,7 +592,6 @@ const ModalProduto = ({ open, onClose, produto }) => {
           </Box>
         </DialogContent>
 
-        {/* Ações */}
         <DialogActions
           sx={{
             flexDirection: "column",
