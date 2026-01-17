@@ -1260,7 +1260,7 @@ const Publico = () => {
       <Paper elevation={10} sx={{ position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 1000 }}>
         <BottomNavigation showLabels>
           <BottomNavigationAction label="Início" icon={<HomeIcon />} onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })} />
-          <BottomNavigationAction label="Pedidos" icon={<ListAltIcon />} onClick={() => navigate("p/meus-pedidos")} />
+          <BottomNavigationAction label="Pedidos" icon={<ListAltIcon />} onClick={() => navigate("/p/meus-pedidos")} />
           <BottomNavigationAction
             label="Carrinho"
             icon={
@@ -1268,7 +1268,7 @@ const Publico = () => {
                 <ShoppingCartIcon />
               </Badge>
             }
-            onClick={() => navigate("p/carrinho")}
+            onClick={() => navigate("/p/carrinho")}
           />
         </BottomNavigation>
       </Paper>
