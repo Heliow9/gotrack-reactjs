@@ -51,27 +51,15 @@ const API_URL = "https://api.movyo.delivery/api";
  * com suporte a horários que viram madrugada (ex: 18:00 -> 02:00).
  */
 function calcularStatusLoja(rest) {
-  const dias = [
-    "domingo",
-    "segunda",
-    "terca",
-    "quarta",
-    "quinta",
-    "sexta",
-    "sabado",
-  ];
+  const dias = ["domingo", "segunda", "terca", "quarta", "quinta", "sexta", "sabado"];
   const hoje = new Date();
   const diaAtual = dias[hoje.getDay()];
   const horarioHoje = rest?.horariosFuncionamento?.[diaAtual];
 
   if (!horarioHoje || horarioHoje.fechado) return "Fechado";
 
-  const [abreHora, abreMin] = (horarioHoje.abre || "00:00")
-    .split(":")
-    .map(Number);
-  const [fechaHora, fechaMin] = (horarioHoje.fecha || "00:00")
-    .split(":")
-    .map(Number);
+  const [abreHora, abreMin] = (horarioHoje.abre || "00:00").split(":").map(Number);
+  const [fechaHora, fechaMin] = (horarioHoje.fecha || "00:00").split(":").map(Number);
 
   const agora = new Date();
 
@@ -84,9 +72,7 @@ function calcularStatusLoja(rest) {
   // Fecha após meia-noite (ex: 18:00 -> 02:00)
   if (horarioFecha <= horarioAbre) {
     horarioFecha.setDate(horarioFecha.getDate() + 1);
-    if (agora < horarioAbre) {
-      horarioAbre.setDate(horarioAbre.getDate() - 1);
-    }
+    if (agora < horarioAbre) horarioAbre.setDate(horarioAbre.getDate() - 1);
   }
 
   return agora >= horarioAbre && agora < horarioFecha ? "Aberto" : "Fechado";
@@ -98,10 +84,7 @@ function calcularStatusLoja(rest) {
 function normalizarRestaurante(qualquerCoisa) {
   if (!qualquerCoisa) return null;
 
-  if (
-    qualquerCoisa.restaurante &&
-    typeof qualquerCoisa.restaurante === "object"
-  ) {
+  if (qualquerCoisa.restaurante && typeof qualquerCoisa.restaurante === "object") {
     return qualquerCoisa.restaurante;
   }
 
@@ -119,14 +102,8 @@ function formatBRL(value) {
 function inferCategoriaType(categoria, item) {
   if (categoria?.pizzaMultisabor) return "pizza";
   if (item?.pizzaMultisabor) return "pizza";
-
-  // Se a categoria permite sabores, muito provavelmente é pizza
   if (categoria?.permiteSabores) return "pizza";
-
-  // Se o produto tem sabores cadastrados, é pizza (mesmo que categoria.tipo esteja errado)
   if ((item?.sabores || []).length > 0) return "pizza";
-
-  // fallback legado
   return categoria?.tipo || "simple_item";
 }
 
@@ -136,9 +113,29 @@ function inferCategoriaType(categoria, item) {
 function shouldShowAPartirDe({ categoria, item, categoriaType }) {
   const sabores = item?.sabores || [];
   const isPizza = categoriaType === "pizza";
-  const isMulti =
-    Boolean(categoria?.pizzaMultisabor) || Boolean(item?.pizzaMultisabor);
+  const isMulti = Boolean(categoria?.pizzaMultisabor) || Boolean(item?.pizzaMultisabor);
   return isPizza && (isMulti || sabores.length > 1);
+}
+
+/**
+ * ✅ Detecta “pizza 2 sabores” mesmo que venha sem flags
+ * (usa categoria.tipo / categoria.nome / item.nome como fallback)
+ */
+function detectarPizza2Sabores(categoria, item) {
+  const tipo = String(categoria?.tipo || "").toLowerCase();
+  const nomeCat = String(categoria?.nome || "").toLowerCase();
+  const nomeItem = String(item?.nome || "").toLowerCase();
+
+  const txt = `${tipo} ${nomeCat} ${nomeItem}`;
+
+  // exemplos: "pizza 2 sabores", "pizza 2", "2 sabores", "meio a meio", "metade"
+  const tem2 = /\b2\b/.test(txt) || txt.includes("dois");
+  const falaSabores = txt.includes("sabor") || txt.includes("sabores");
+  const falaMeioMeio = txt.includes("meio a meio") || txt.includes("meio-meio") || txt.includes("metade");
+
+  // se já é pizza e menciona 2+sabores, ou menciona meio a meio
+  const ehPizza = inferCategoriaType(categoria, item) === "pizza";
+  return ehPizza && ((tem2 && falaSabores) || falaMeioMeio);
 }
 
 const Publico = () => {
@@ -175,14 +172,14 @@ const Publico = () => {
   const isMobile = useMediaQuery("(max-width:600px)");
   const lojaAberta = statusLoja === "Aberto";
 
+  // ✅ Contador do “Próximo em Xs”
+  const [destaqueCountdown, setDestaqueCountdown] = useState(10);
+
   // ======= Carrinho contador =======
   useEffect(() => {
     const atualizarQuantidade = () => {
       const carrinho = JSON.parse(localStorage.getItem("carrinho")) || [];
-      const total = carrinho.reduce(
-        (acc, item) => acc + (item.quantidade || 0),
-        0
-      );
+      const total = carrinho.reduce((acc, item) => acc + (item.quantidade || 0), 0);
       setQuantidadeCarrinho(total);
     };
 
@@ -239,21 +236,14 @@ const Publico = () => {
         }
 
         const produtosPorCategoria =
-          res.data?.produtosPorCategoria ||
-          restauranteFresh?.produtosPorCategoria ||
-          [];
+          res.data?.produtosPorCategoria || restauranteFresh?.produtosPorCategoria || [];
 
-        localStorage.setItem(
-          "restauranteSelecionado",
-          JSON.stringify(restauranteFresh)
-        );
+        localStorage.setItem("restauranteSelecionado", JSON.stringify(restauranteFresh));
 
         setRestaurante(restauranteFresh);
         setStatusLoja(calcularStatusLoja(restauranteFresh));
 
-        const categoriasBase = (produtosPorCategoria || []).filter(
-          (cat) => cat.ativa !== false
-        );
+        const categoriasBase = (produtosPorCategoria || []).filter((cat) => cat.ativa !== false);
 
         const categoriasComItensFiltrados = categoriasBase.map((cat) => ({
           ...cat,
@@ -298,9 +288,7 @@ const Publico = () => {
           const nome = (item.nome || "").toLowerCase();
           const desc = (item.descricao || "").toLowerCase();
           const tag = (item.tag || "").toLowerCase();
-          return (
-            nome.includes(termo) || desc.includes(termo) || tag.includes(termo)
-          );
+          return nome.includes(termo) || desc.includes(termo) || tag.includes(termo);
         });
         return { ...cat, itens };
       })
@@ -308,10 +296,7 @@ const Publico = () => {
   }, [produtosRaw, busca]);
 
   const totalItensEncontrados = useMemo(() => {
-    return (produtos || []).reduce(
-      (acc, cat) => acc + (cat.itens?.length || 0),
-      0
-    );
+    return (produtos || []).reduce((acc, cat) => acc + (cat.itens?.length || 0), 0);
   }, [produtos]);
 
   // ✅ Destaques (derivado do RAW; robusto p/ boolean/string/number)
@@ -319,8 +304,8 @@ const Publico = () => {
     const termo = (busca || "").trim().toLowerCase();
     const all = [];
 
-    for (const cat of (produtosRaw || [])) {
-      for (const item of (cat.itens || [])) {
+    for (const cat of produtosRaw || []) {
+      for (const item of cat.itens || []) {
         const isDestaque =
           item?.destaque === true ||
           item?.destaque === "true" ||
@@ -333,8 +318,7 @@ const Publico = () => {
           const nome = (item.nome || "").toLowerCase();
           const desc = (item.descricao || "").toLowerCase();
           const tag = (item.tag || "").toLowerCase();
-          const match =
-            nome.includes(termo) || desc.includes(termo) || tag.includes(termo);
+          const match = nome.includes(termo) || desc.includes(termo) || tag.includes(termo);
           if (!match) continue;
         }
 
@@ -342,9 +326,7 @@ const Publico = () => {
       }
     }
 
-    all.sort(
-      (a, b) => Number(a.item?.ordem || 0) - Number(b.item?.ordem || 0)
-    );
+    all.sort((a, b) => Number(a.item?.ordem || 0) - Number(b.item?.ordem || 0));
     return all;
   }, [produtosRaw, busca]);
 
@@ -359,41 +341,54 @@ const Publico = () => {
     const safeIdx = ((idx % cards.length) + cards.length) % cards.length;
     const el = cards[safeIdx];
 
-    const left =
-      el.offsetLeft - container.clientWidth / 2 + el.clientWidth / 2;
+    const left = el.offsetLeft - container.clientWidth / 2 + el.clientWidth / 2;
 
     container.scrollTo({ left, behavior });
     setDestaqueIndex(safeIdx);
+
+    // ✅ reinicia o contador sempre que troca
+    setDestaqueCountdown(10);
   };
 
   // ✅ inicializa no primeiro destaque quando carregar
   useEffect(() => {
     if (!loadingProdutos && destaques.length > 0) {
-      // sem animação na primeira centralização
       scrollToDestaqueIndex(0, "auto");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loadingProdutos, destaques.length]);
 
-  // ✅ autoplay: a cada 10s (pausa no modal e durante drag)
+  // ✅ autoplay com contador “Próximo em Xs” (pausa no modal e durante drag)
   useEffect(() => {
     if (autoplayRef.current) clearInterval(autoplayRef.current);
 
     if (loadingProdutos) return;
     if (!destaques.length) return;
-    if (modalAberto) return;
+
+    // se modal aberto, não conta
+    if (modalAberto) {
+      setDestaqueCountdown(10);
+      return;
+    }
 
     autoplayRef.current = setInterval(() => {
       if (isDraggingDestaquesRef.current) return;
-      scrollToDestaqueIndex(destaqueIndex + 1);
-    }, 10000);
+
+      setDestaqueCountdown((prev) => {
+        if (prev <= 1) {
+          scrollToDestaqueIndex(destaqueIndex + 1);
+          return 10;
+        }
+        return prev - 1;
+      });
+    }, 1000);
 
     return () => {
       if (autoplayRef.current) clearInterval(autoplayRef.current);
     };
   }, [loadingProdutos, destaques.length, modalAberto, destaqueIndex]);
 
-  // botões (mantém compatível)
+  // botões
   const scrollDestaquesLeft = () => scrollToDestaqueIndex(destaqueIndex - 1);
   const scrollDestaquesRight = () => scrollToDestaqueIndex(destaqueIndex + 1);
 
@@ -408,9 +403,7 @@ const Publico = () => {
       (entries) => {
         const visiveis = entries
           .filter((e) => e.isIntersecting)
-          .sort(
-            (a, b) => (b.intersectionRatio || 0) - (a.intersectionRatio || 0)
-          );
+          .sort((a, b) => (b.intersectionRatio || 0) - (a.intersectionRatio || 0));
 
         if (visiveis[0]) {
           const idx = refs.findIndex((r) => r === visiveis[0].target);
@@ -431,18 +424,13 @@ const Publico = () => {
   // centraliza categoria selecionada
   useEffect(() => {
     const container = categoriasScrollRef.current;
-    const btn = container?.querySelector?.(
-      `[data-cat-index="${categoriaAtiva}"]`
-    );
+    const btn = container?.querySelector?.(`[data-cat-index="${categoriaAtiva}"]`);
     if (!container || !btn) return;
 
     const containerRect = container.getBoundingClientRect();
     const btnRect = btn.getBoundingClientRect();
     const offset =
-      btnRect.left -
-      containerRect.left -
-      containerRect.width / 2 +
-      btnRect.width / 2;
+      btnRect.left - containerRect.left - containerRect.width / 2 + btnRect.width / 2;
 
     container.scrollBy({ left: offset, behavior: "smooth" });
   }, [categoriaAtiva]);
@@ -450,10 +438,7 @@ const Publico = () => {
   const renderAvatar = (size = 40) => {
     if (restaurante?.logoUrl) {
       return (
-        <Avatar
-          src={restaurante.logoUrl}
-          sx={{ width: size, height: size, bgcolor: "#fff" }}
-        />
+        <Avatar src={restaurante.logoUrl} sx={{ width: size, height: size, bgcolor: "#fff" }} />
       );
     } else if (restaurante?.nome) {
       const initials = restaurante.nome
@@ -462,21 +447,12 @@ const Publico = () => {
         .join("")
         .slice(0, 2)
         .toUpperCase();
-      return (
-        <Avatar sx={{ width: size, height: size }}>{initials || "R"}</Avatar>
-      );
+      return <Avatar sx={{ width: size, height: size }}>{initials || "R"}</Avatar>;
     }
-    return (
-      <Avatar
-        src={DEFAULT_IMAGE_URL}
-        sx={{ width: size, height: size, bgcolor: "#fff" }}
-      />
-    );
+    return <Avatar src={DEFAULT_IMAGE_URL} sx={{ width: size, height: size, bgcolor: "#fff" }} />;
   };
 
-  const getStickyHeight = () => {
-    return stickyRef.current?.getBoundingClientRect?.().height || 160;
-  };
+  const getStickyHeight = () => stickyRef.current?.getBoundingClientRect?.().height || 160;
 
   const scrollToSection = (index) => {
     const ref = sectionRefs.current[index];
@@ -500,8 +476,8 @@ const Publico = () => {
   };
 
   /**
-   * ✅ Abre modal passando também “regras da categoria”
-   * ✅ Pausa autoplay automaticamente pois modalAberto = true
+   * ✅ AJUSTE AQUI: garante pizza 2 sabores -> checkbox (maxSabores=2)
+   * mesmo que categoria venha sem pizzaMultisabor/maxSabores
    */
   const abrirModalProduto = (item, categoria) => {
     if (!lojaAberta) {
@@ -519,19 +495,25 @@ const Publico = () => {
       itens: item.extras?.[extra.nome] || [],
     }));
 
+    const ehPizza2 = detectarPizza2Sabores(categoria, item);
+
+    const pizzaMultisabor =
+      Boolean(categoria?.pizzaMultisabor) ||
+      Boolean(item?.pizzaMultisabor) ||
+      ehPizza2;
+
+    const maxSabores =
+      Number(categoria?.maxSabores || item?.maxSabores) ||
+      (pizzaMultisabor ? 2 : 1);
+
     setProdutoSelecionado({
       ...item,
       precoBase: item.precoBase,
       categoriaType,
 
-      pizzaMultisabor:
-        Boolean(categoria?.pizzaMultisabor) || Boolean(item?.pizzaMultisabor),
-      calculoPrecoPor:
-        categoria?.calculoPrecoPor || item?.calculoPrecoPor || "maior",
-      maxSabores:
-        categoria?.maxSabores ||
-        item?.maxSabores ||
-        (categoria?.pizzaMultisabor ? 2 : 1),
+      pizzaMultisabor,
+      calculoPrecoPor: categoria?.calculoPrecoPor || item?.calculoPrecoPor || "maior",
+      maxSabores,
 
       saboresDisponiveis: item.sabores || [],
       bordasDisponiveis: item.bordas || [],
@@ -542,16 +524,14 @@ const Publico = () => {
       categoriaNome: categoria?.nome || "",
     });
 
+    setDestaqueCountdown(10);
     setModalAberto(true);
   };
 
   const getPrecoLabel = (item, categoria, categoriaType) => {
     const sabores = item?.sabores || [];
 
-    if (
-      shouldShowAPartirDe({ categoria, item, categoriaType }) &&
-      sabores.length > 0
-    ) {
+    if (shouldShowAPartirDe({ categoria, item, categoriaType }) && sabores.length > 0) {
       const menor = Math.min(...sabores.map((s) => Number(s.preco || 0)));
       if (Number.isFinite(menor)) return `a partir de ${formatBRL(menor)}`;
     }
@@ -562,33 +542,25 @@ const Publico = () => {
   const chipsInfo = useMemo(() => {
     const list = [];
 
-    if (restaurante?.tempoEntrega) {
-      list.push({ key: "tempo", label: `${restaurante.tempoEntrega} min` });
-    }
-    if (restaurante?.taxaEntrega != null) {
-      list.push({
-        key: "taxa",
-        label: `Entrega ${formatBRL(restaurante.taxaEntrega)}`,
-      });
-    }
-    if (restaurante?.pedidoMinimo != null) {
-      list.push({
-        key: "min",
-        label: `Mín. ${formatBRL(restaurante.pedidoMinimo)}`,
-      });
-    }
+    if (restaurante?.tempoEntrega) list.push({ key: "tempo", label: `${restaurante.tempoEntrega} min` });
+    if (restaurante?.taxaEntrega != null)
+      list.push({ key: "taxa", label: `Entrega ${formatBRL(restaurante.taxaEntrega)}` });
+    if (restaurante?.pedidoMinimo != null)
+      list.push({ key: "min", label: `Mín. ${formatBRL(restaurante.pedidoMinimo)}` });
 
     return list;
   }, [restaurante]);
 
+  // ✅ Progresso da barrinha (0..100)
+  const progressPct = useMemo(() => {
+    const pct = (destaqueCountdown / 10) * 100;
+    return Math.max(0, Math.min(100, pct));
+  }, [destaqueCountdown]);
+
   return (
     <Box sx={{ pb: 10, backgroundColor: "#f5f5f7", minHeight: "100vh" }}>
       <Helmet>
-        {restaurante ? (
-          <title>{restaurante.nome} - Faça seu pedido</title>
-        ) : (
-          <title>Carregando loja...</title>
-        )}
+        {restaurante ? <title>{restaurante.nome} - Faça seu pedido</title> : <title>Carregando loja...</title>}
       </Helmet>
 
       {/* APPBAR */}
@@ -597,8 +569,7 @@ const Publico = () => {
         elevation={2}
         sx={{
           zIndex: 1201,
-          background:
-            "linear-gradient(90deg, #ff4b8b 0%, #ff7a3d 45%, #ffb347 100%)",
+          background: "linear-gradient(90deg, #ff4b8b 0%, #ff7a3d 45%, #ffb347 100%)",
         }}
       >
         <Toolbar
@@ -611,12 +582,7 @@ const Publico = () => {
             gap: 1,
           }}
         >
-          <Box
-            display="flex"
-            alignItems="center"
-            gap={1.5}
-            sx={{ flex: 1, minWidth: 0 }}
-          >
+          <Box display="flex" alignItems="center" gap={1.5} sx={{ flex: 1, minWidth: 0 }}>
             {renderAvatar(headerCompacto ? 32 : 36)}
             <Box sx={{ minWidth: 0 }}>
               <Typography
@@ -629,11 +595,7 @@ const Publico = () => {
               </Typography>
 
               {!headerCompacto && restaurante?.enderecoBairro && (
-                <Typography
-                  variant="caption"
-                  sx={{ color: "rgba(255,255,255,0.88)" }}
-                  noWrap
-                >
+                <Typography variant="caption" sx={{ color: "rgba(255,255,255,0.88)" }} noWrap>
                   {restaurante.enderecoBairro}
                   {restaurante.enderecoCidade ? ` • ${restaurante.enderecoCidade}` : ""}
                 </Typography>
@@ -720,11 +682,7 @@ const Publico = () => {
           />
 
           {!loadingProdutos && (
-            <Typography
-              variant="caption"
-              color="text.secondary"
-              sx={{ mt: 0.75, display: "block" }}
-            >
+            <Typography variant="caption" color="text.secondary" sx={{ mt: 0.75, display: "block" }}>
               {busca
                 ? `${totalItensEncontrados} item(s) encontrado(s) para “${busca.trim()}”`
                 : "Dica: use a busca pra achar rapidinho qualquer item."}
@@ -804,7 +762,7 @@ const Publico = () => {
         </Box>
       </Box>
 
-      {/* ✅ DESTAQUES FORA DO STICKY (não fica fixado) */}
+      {/* ✅ DESTAQUES FORA DO STICKY */}
       {!loadingProdutos && destaques.length > 0 && (
         <Box sx={{ pt: 1.2, pb: 1.2 }}>
           <Box sx={{ px: 2, mb: 0.8, display: "flex", alignItems: "center", gap: 1 }}>
@@ -819,9 +777,33 @@ const Publico = () => {
                 borderRadius: "999px",
               }}
             />
-            <Typography variant="caption" sx={{ color: "text.secondary", fontWeight: 700 }}>
-              Passa sozinho a cada 10s
-            </Typography>
+
+            <Box sx={{ minWidth: 0 }}>
+              <Typography variant="caption" sx={{ color: "text.secondary", fontWeight: 800, display: "block" }}>
+                Próximo em {destaqueCountdown}s
+              </Typography>
+
+              <Box
+                sx={{
+                  mt: 0.4,
+                  width: 140,
+                  height: 6,
+                  borderRadius: 999,
+                  bgcolor: "rgba(0,0,0,0.08)",
+                  overflow: "hidden",
+                }}
+              >
+                <Box
+                  sx={{
+                    height: "100%",
+                    width: `${progressPct}%`,
+                    bgcolor: "#ff7a3d",
+                    borderRadius: 999,
+                    transition: "width 300ms linear",
+                  }}
+                />
+              </Box>
+            </Box>
 
             <Box sx={{ ml: "auto", display: "flex", gap: 0.5 }}>
               <IconButton onClick={scrollDestaquesLeft} size="small" aria-label="Destaques anteriores">
@@ -871,7 +853,6 @@ const Publico = () => {
                 gap: 1.25,
                 scrollbarWidth: "none",
                 "&::-webkit-scrollbar": { display: "none" },
-
                 scrollSnapType: "x mandatory",
                 scrollPaddingLeft: 16,
                 scrollPaddingRight: 16,
@@ -1025,28 +1006,19 @@ const Publico = () => {
             </Typography>
 
             {busca && (
-              <Button
-                onClick={() => setBusca("")}
-                sx={{ mt: 2, borderRadius: "999px" }}
-                variant="contained"
-              >
+              <Button onClick={() => setBusca("")} sx={{ mt: 2, borderRadius: "999px" }} variant="contained">
                 Limpar busca
               </Button>
             )}
           </Box>
         ) : (
           produtos.map((categoria, i) => (
-            <Box
-              key={categoria._id || i}
-              ref={(el) => (sectionRefs.current[i] = el)}
-              sx={{ mb: 3.5 }}
-            >
+            <Box key={categoria._id || i} ref={(el) => (sectionRefs.current[i] = el)} sx={{ mb: 3.5 }}>
               <Box sx={{ px: 2, pt: 1 }}>
                 <Stack direction="row" alignItems="baseline" justifyContent="space-between">
                   <Typography variant="h6" fontWeight={900} sx={{ mb: 0.5, color: "#333" }}>
                     {categoria.nome}
                   </Typography>
-
                   <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 700 }}>
                     {(categoria.itens || []).length} item(s)
                   </Typography>
@@ -1063,6 +1035,12 @@ const Publico = () => {
 
               {categoria.itens.map((item, index) => {
                 const categoriaType = inferCategoriaType(categoria, item);
+
+                const isDestaque =
+                  item?.destaque === true ||
+                  item?.destaque === "true" ||
+                  item?.destaque === 1 ||
+                  item?.destaque === "1";
 
                 return (
                   <Box key={item._id || index} sx={{ mb: 1 }}>
@@ -1088,28 +1066,15 @@ const Publico = () => {
                       >
                         <Box sx={{ flex: 1, pr: 1 }}>
                           <Stack direction="row" spacing={1} alignItems="center">
-                            <Typography
-                              variant="subtitle1"
-                              fontWeight={900}
-                              sx={{ mb: 0.25, lineHeight: 1.15 }}
-                            >
+                            <Typography variant="subtitle1" fontWeight={900} sx={{ mb: 0.25, lineHeight: 1.15 }}>
                               {item.nome}
                             </Typography>
 
                             {item.tag && (
-                              <Chip
-                                label={item.tag}
-                                size="small"
-                                color="secondary"
-                                variant="outlined"
-                                sx={{ height: 22 }}
-                              />
+                              <Chip label={item.tag} size="small" color="secondary" variant="outlined" sx={{ height: 22 }} />
                             )}
 
-                            {(item?.destaque === true ||
-                              item?.destaque === "true" ||
-                              item?.destaque === 1 ||
-                              item?.destaque === "1") && (
+                            {isDestaque && (
                               <Chip
                                 icon={<StarIcon fontSize="small" />}
                                 label="Destaque"
@@ -1176,15 +1141,7 @@ const Publico = () => {
                           </Box>
                         </Box>
 
-                        <Box
-                          sx={{
-                            width: 92,
-                            height: 92,
-                            ml: 1.5,
-                            position: "relative",
-                            flexShrink: 0,
-                          }}
-                        >
+                        <Box sx={{ width: 92, height: 92, ml: 1.5, position: "relative", flexShrink: 0 }}>
                           <Avatar
                             src={item.imagem || DEFAULT_IMAGE_URL}
                             alt={item.nome}
@@ -1232,28 +1189,17 @@ const Publico = () => {
           open={modalAberto}
           onClose={() => {
             setModalAberto(false);
-            // quando fecha modal, autoplay volta sozinho pelo useEffect
+            setDestaqueCountdown(10);
           }}
           produto={produtoSelecionado}
         />
       )}
 
       {/* Bottom nav */}
-      <Paper
-        elevation={10}
-        sx={{ position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 1000 }}
-      >
+      <Paper elevation={10} sx={{ position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 1000 }}>
         <BottomNavigation showLabels>
-          <BottomNavigationAction
-            label="Início"
-            icon={<HomeIcon />}
-            onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
-          />
-          <BottomNavigationAction
-            label="Pedidos"
-            icon={<ListAltIcon />}
-            onClick={() => navigate("/meus-pedidos")}
-          />
+          <BottomNavigationAction label="Início" icon={<HomeIcon />} onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })} />
+          <BottomNavigationAction label="Pedidos" icon={<ListAltIcon />} onClick={() => navigate("/meus-pedidos")} />
           <BottomNavigationAction
             label="Carrinho"
             icon={

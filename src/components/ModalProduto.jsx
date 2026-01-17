@@ -52,16 +52,29 @@ const ModalProduto = ({ open, onClose, produto }) => {
   const [showSnackbar, setShowSnackbar] = useState(false);
 
   const isPizza = isPizzaProduto(produto);
+  const saboresDisp = produto?.saboresDisponiveis || [];
 
-  // maxSabores: se multi, padrão 2; se pizza tradicional, padrão 1
+  /**
+   * ✅ maxSabores:
+   * - se veio do Publico (categoria.maxSabores/item.maxSabores) respeita
+   * - se pizzaMultisabor -> 2
+   * - caso contrário -> 1
+   *
+   * ⚠️ IMPORTANTE: NÃO usar "saboresLen>1 => 2" porque pizza normal pode ter vários sabores cadastrados,
+   * mas ainda ser "1 sabor" (pizza tradicional).
+   */
   const maxSabores = useMemo(() => {
     if (!produto) return 1;
-    if (Number.isFinite(Number(produto.maxSabores)) && Number(produto.maxSabores) > 0) {
-      return Number(produto.maxSabores);
-    }
+
+    const ms = Number(produto.maxSabores);
+    if (Number.isFinite(ms) && ms > 0) return ms;
+
     if (produto.pizzaMultisabor) return 2;
+
     return 1;
   }, [produto]);
+
+  const isPizzaMultiSabor = isPizza && maxSabores > 1;
 
   // Reset de estado sempre que abrir um produto novo
   useEffect(() => {
@@ -76,12 +89,12 @@ const ModalProduto = ({ open, onClose, produto }) => {
     setQuantidade(1);
     setValidationError("");
 
-    // Auto selecionar sabor único
-    if (isPizza && produto?.saboresDisponiveis?.length === 1) {
-      setSaboresSelecionados([produto.saboresDisponiveis[0].nome]);
+    // ✅ auto selecionar sabor único SOMENTE quando maxSabores === 1 e só existe 1 sabor disponível
+    if (isPizza && maxSabores === 1 && saboresDisp.length === 1) {
+      setSaboresSelecionados([saboresDisp[0].nome]);
     }
 
-    // Auto seleção de extras obrigatórios
+    // Auto seleção de extras obrigatórios / únicos
     const autoSelectExtras = {};
     produto?.tiposExtras?.forEach((tipo) => {
       if (tipo.tipoSelecion === "unico" && tipo.itens?.length === 1) {
@@ -97,7 +110,7 @@ const ModalProduto = ({ open, onClose, produto }) => {
       }
     });
     setTiposExtrasSelecionados(autoSelectExtras);
-  }, [open, produto, isPizza]);
+  }, [open, produto, isPizza, maxSabores, saboresDisp.length]);
 
   // Cálculo do preço total (memoizado)
   const precoTotal = useMemo(() => {
@@ -105,18 +118,17 @@ const ModalProduto = ({ open, onClose, produto }) => {
 
     let total = Number(produto.precoBase || 0);
 
-    // ✅ PIZZA: cálculo por sabores (ignora "somar sabores")
+    // ✅ PIZZA: calcula pelo maior ou média dos sabores
     if (isPizza && saboresSelecionados.length > 0) {
       const precos = saboresSelecionados
         .map((nome) => {
-          const sabor = produto.saboresDisponiveis?.find((s) => s.nome === nome);
+          const sabor = saboresDisp.find((s) => s.nome === nome);
           return Number(sabor?.preco || 0);
         })
         .filter((v) => Number.isFinite(v));
 
       if (precos.length > 0) {
         const regra = produto.calculoPrecoPor || "maior";
-
         if (regra === "media") {
           const soma = precos.reduce((acc, v) => acc + v, 0);
           total = soma / precos.length;
@@ -128,17 +140,13 @@ const ModalProduto = ({ open, onClose, produto }) => {
 
     // Borda
     if (bordaSelecionada !== "nenhum") {
-      const borda = produto.bordasDisponiveis?.find(
-        (b) => b.nome === bordaSelecionada
-      );
+      const borda = produto.bordasDisponiveis?.find((b) => b.nome === bordaSelecionada);
       total += Number(borda?.preco || 0);
     }
 
     // Adicional
     if (adicionalSelecionado !== "nenhum") {
-      const adicional = produto.adicionais?.find(
-        (a) => a.nome === adicionalSelecionado
-      );
+      const adicional = produto.adicionais?.find((a) => a.nome === adicionalSelecionado);
       total += Number(adicional?.preco || 0);
     }
 
@@ -151,9 +159,7 @@ const ModalProduto = ({ open, onClose, produto }) => {
     // Tipos Extras
     Object.entries(tiposExtrasSelecionados).forEach(([, itens]) => {
       if (Array.isArray(itens)) {
-        for (const item of itens) {
-          total += Number(item?.preco || 0);
-        }
+        for (const item of itens) total += Number(item?.preco || 0);
       }
     });
 
@@ -163,6 +169,7 @@ const ModalProduto = ({ open, onClose, produto }) => {
     produto,
     isPizza,
     saboresSelecionados,
+    saboresDisp,
     bordaSelecionada,
     adicionalSelecionado,
     complementosSelecionados,
@@ -175,15 +182,16 @@ const ModalProduto = ({ open, onClose, produto }) => {
   // Validação
   const validate = () => {
     if (isPizza) {
-      const saboresDisp = produto.saboresDisponiveis || [];
-
-      // se tem mais de 1 sabor disponível, exige a regra do maxSabores
-      if (saboresDisp.length > 1) {
+      // se é multisabor, exige exatamente maxSabores
+      if (maxSabores > 1) {
         if (saboresSelecionados.length !== maxSabores) {
           return `Selecione exatamente ${maxSabores} sabor(es).`;
         }
-      } else if (saboresDisp.length === 1 && saboresSelecionados.length !== 1) {
-        return "Selecione o sabor da pizza.";
+      } else {
+        // pizza 1 sabor: exige 1 quando existem sabores cadastrados
+        if (saboresDisp.length >= 1 && saboresSelecionados.length !== 1) {
+          return "Selecione o sabor da pizza.";
+        }
       }
     }
 
@@ -215,13 +223,12 @@ const ModalProduto = ({ open, onClose, produto }) => {
       produtoId: produto._id,
       nome: produto.nome,
       imagem: produto.imagem,
-      categoriaType: isPizza ? "pizza" : (produto.categoriaType || "simple_item"),
+      categoriaType: isPizza ? "pizza" : produto.categoriaType || "simple_item",
 
       // pizza
       pizzaMultisabor: Boolean(produto.pizzaMultisabor),
       calculoPrecoPor: produto.calculoPrecoPor || "maior",
       maxSabores,
-
       saboresSelecionados,
 
       // borda/adicional/complementos
@@ -234,9 +241,7 @@ const ModalProduto = ({ open, onClose, produto }) => {
           ? null
           : produto.adicionais?.find((a) => a.nome === adicionalSelecionado),
       complementosSelecionados:
-        produto.complementos?.filter((c) =>
-          complementosSelecionados.includes(c.nome)
-        ) || [],
+        produto.complementos?.filter((c) => complementosSelecionados.includes(c.nome)) || [],
 
       tiposExtrasSelecionados,
       observacao,
@@ -255,12 +260,7 @@ const ModalProduto = ({ open, onClose, produto }) => {
     onClose();
   };
 
-  const saboresDisp = produto.saboresDisponiveis || [];
-  const isPizzaMultiSabor =
-    isPizza && saboresDisp.length > 1 && maxSabores > 1;
-
   const mostrarPrecoBasePizza = isPizza && saboresDisp.length > 1;
-
   const precoPizzaAPartir = mostrarPrecoBasePizza
     ? (() => {
         const min = saboresDisp.reduce((menor, s) => {
@@ -314,24 +314,12 @@ const ModalProduto = ({ open, onClose, produto }) => {
 
         <DialogContent sx={{ pt: 2 }}>
           {/* Imagem */}
-          <Box
-            sx={{
-              mb: 2,
-              borderRadius: 2,
-              overflow: "hidden",
-              position: "relative",
-            }}
-          >
+          <Box sx={{ mb: 2, borderRadius: 2, overflow: "hidden", position: "relative" }}>
             <Box
               component="img"
               src={produto.imagem || DEFAULT_IMAGE_URL}
               alt={produto.nome}
-              sx={{
-                width: "100%",
-                height: 180,
-                objectFit: "cover",
-                display: "block",
-              }}
+              sx={{ width: "100%", height: 180, objectFit: "cover", display: "block" }}
             />
           </Box>
 
@@ -351,11 +339,7 @@ const ModalProduto = ({ open, onClose, produto }) => {
 
           {/* Alertas */}
           {validationError && (
-            <Alert
-              severity="warning"
-              onClose={() => setValidationError("")}
-              sx={{ mb: 2 }}
-            >
+            <Alert severity="warning" onClose={() => setValidationError("")} sx={{ mb: 2 }}>
               {validationError}
             </Alert>
           )}
@@ -367,8 +351,8 @@ const ModalProduto = ({ open, onClose, produto }) => {
                 Sabores {isPizzaMultiSabor ? `(escolha exatamente ${maxSabores})` : ""}
               </Typography>
 
-              {/* se maxSabores=1 ou só 1 sabor -> radio */}
-              {saboresDisp.length === 1 || maxSabores === 1 ? (
+              {/* ✅ regra: maxSabores===1 => radio; maxSabores>1 => checkbox */}
+              {maxSabores === 1 ? (
                 <RadioGroup
                   value={saboresSelecionados[0] || ""}
                   onChange={(e) =>
@@ -388,8 +372,7 @@ const ModalProduto = ({ open, onClose, produto }) => {
                 <Box display="flex" flexDirection="column">
                   {saboresDisp.map((s, i) => {
                     const checked = saboresSelecionados.includes(s.nome);
-                    const desabilitado =
-                      !checked && saboresSelecionados.length >= maxSabores && maxSabores > 0;
+                    const desabilitado = !checked && saboresSelecionados.length >= maxSabores;
 
                     return (
                       <FormControlLabel
@@ -424,10 +407,7 @@ const ModalProduto = ({ open, onClose, produto }) => {
               <Typography fontWeight="bold" gutterBottom>
                 Borda
               </Typography>
-              <RadioGroup
-                value={bordaSelecionada}
-                onChange={(e) => setBordaSelecionada(e.target.value)}
-              >
+              <RadioGroup value={bordaSelecionada} onChange={(e) => setBordaSelecionada(e.target.value)}>
                 <FormControlLabel value="nenhum" control={<Radio />} label="Sem borda" />
                 {produto.bordasDisponiveis.map((b, i) => (
                   <FormControlLabel
@@ -447,10 +427,7 @@ const ModalProduto = ({ open, onClose, produto }) => {
               <Typography fontWeight="bold" gutterBottom>
                 Adicional
               </Typography>
-              <RadioGroup
-                value={adicionalSelecionado}
-                onChange={(e) => setAdicionalSelecionado(e.target.value)}
-              >
+              <RadioGroup value={adicionalSelecionado} onChange={(e) => setAdicionalSelecionado(e.target.value)}>
                 <FormControlLabel value="nenhum" control={<Radio />} label="Sem adicional" />
                 {produto.adicionais.map((a, i) => (
                   <FormControlLabel
@@ -581,20 +558,12 @@ const ModalProduto = ({ open, onClose, produto }) => {
           />
 
           {/* Quantidade */}
-          <Box
-            display="flex"
-            alignItems="center"
-            justifyContent="space-between"
-            sx={{ mt: 3 }}
-          >
+          <Box display="flex" alignItems="center" justifyContent="space-between" sx={{ mt: 3 }}>
             <Typography variant="subtitle1" fontWeight="bold">
               Quantidade
             </Typography>
             <Box display="flex" alignItems="center" gap={1.5}>
-              <IconButton
-                size="small"
-                onClick={() => setQuantidade((q) => Math.max(1, q - 1))}
-              >
+              <IconButton size="small" onClick={() => setQuantidade((q) => Math.max(1, q - 1))}>
                 <RemoveIcon />
               </IconButton>
               <Typography>{quantidade}</Typography>

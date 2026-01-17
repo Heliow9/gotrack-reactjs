@@ -1,982 +1,590 @@
-// pages/Carrinho.jsx
-import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+// src/pages/Carrinho.jsx
+import React, { useEffect, useMemo, useState } from "react";
 import {
-  Box,
-  Typography,
-  Button,
-  IconButton,
-  Divider,
-  Avatar,
   AppBar,
   Toolbar,
-  Fade,
+  Typography,
+  IconButton,
+  Box,
+  Paper,
+  Button,
+  Divider,
+  Avatar,
+  Stack,
   Chip,
   Snackbar,
   Alert,
-  Paper,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
-  Tooltip,
-  Stack,
 } from "@mui/material";
-
-import DeleteIcon from "@mui/icons-material/Delete";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
+import ShoppingCartOutlinedIcon from "@mui/icons-material/ShoppingCartOutlined";
+import DeleteIcon from "@mui/icons-material/Delete";
 import AddIcon from "@mui/icons-material/Add";
 import RemoveIcon from "@mui/icons-material/Remove";
 import AccessTimeIcon from "@mui/icons-material/AccessTime";
-import AddShoppingCartIcon from "@mui/icons-material/AddShoppingCart";
-import LocalCafeIcon from "@mui/icons-material/LocalCafe";
-import IcecreamIcon from "@mui/icons-material/Icecream";
-import LocalDrinkIcon from "@mui/icons-material/LocalDrink";
+import { useNavigate, useParams } from "react-router-dom";
 
-import { useNavigate } from "react-router-dom";
-import { Helmet } from "react-helmet";
+const DEFAULT_IMAGE_URL =
+  "https://cdn-icons-png.flaticon.com/512/1404/1404945.png";
 
-const FALLBACK_IMG = "https://cdn-icons-png.flaticon.com/512/1404/1404945.png";
-
-const diasSemana = ["domingo", "segunda", "terca", "quarta", "quinta", "sexta", "sabado"];
-
-function parseHM(hm) {
-  const [h, m] = (hm || "0:0").split(":").map(Number);
-  return { h, m };
+// ===== helpers =====
+function formatBRL(v) {
+  const num = Number(v || 0);
+  return num.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
 
-function makeDateWithHM(baseDate, hm) {
-  const { h, m } = parseHM(hm);
-  const d = new Date(baseDate);
-  d.setHours(h, m, 0, 0);
-  return d;
-}
-
-/**
- * Regra:
- * - Se fecha <= abre, significa que fecha no dia seguinte (vira-dia).
- */
-function isOpenNow(restaurante, now = new Date()) {
-  const hf = restaurante?.horariosFuncionamento;
-  if (!hf) return { open: false, today: null, horario: null };
-
-  const hojeKey = diasSemana[now.getDay()];
-  const horario = hf[hojeKey];
-
-  if (!horario || horario.fechado || !horario.abre || !horario.fecha) {
-    return { open: false, today: hojeKey, horario };
-  }
-
-  const abre = makeDateWithHM(now, horario.abre);
-  let fecha = makeDateWithHM(now, horario.fecha);
-
-  // vira-dia
-  if (fecha <= abre) {
-    fecha = new Date(fecha.getTime() + 24 * 60 * 60 * 1000);
-  }
-
-  return { open: now >= abre && now < fecha, today: hojeKey, horario };
-}
-
-function getNextOpenLabel(restaurante, now = new Date()) {
-  const hf = restaurante?.horariosFuncionamento;
-  if (!hf) return null;
-
-  const hojeKey = diasSemana[now.getDay()];
-  const hoje = hf[hojeKey];
-
-  if (hoje && !hoje.fechado && hoje.abre && hoje.fecha) {
-    const abre = makeDateWithHM(now, hoje.abre);
-    let fecha = makeDateWithHM(now, hoje.fecha);
-    if (fecha <= abre) fecha = new Date(fecha.getTime() + 24 * 60 * 60 * 1000);
-    if (now < abre) return `Hoje às ${hoje.abre}`;
-  }
-
-  for (let i = 1; i <= 7; i++) {
-    const d = new Date(now.getTime() + i * 24 * 60 * 60 * 1000);
-    const key = diasSemana[d.getDay()];
-    const h = hf[key];
-    if (h && !h.fechado && h.abre && h.fecha) {
-      const labelDia = i === 1 ? "Amanhã" : key.charAt(0).toUpperCase() + key.slice(1);
-      return `${labelDia} às ${h.abre}`;
-    }
-  }
-
-  return null;
-}
-
-/**
- * Sugestões:
- * - Se o backend já tiver algo, você pode salvar no restaurante:
- *   restaurante.sugestoesCarrinho = [{ id, nome, preco, imagem, categoria }]
- * - Se não tiver, a UI usa um fallback bonitinho (bebidas/sobremesas).
- */
-function buildSuggestions(restaurante) {
-  const fromRestaurant = Array.isArray(restaurante?.sugestoesCarrinho)
-    ? restaurante.sugestoesCarrinho
-    : [];
-
-  const normalized = fromRestaurant
-    .map((p) => ({
-      id: p.id || p._id || p.nome,
-      nome: p.nome,
-      preco: Number(p.preco || p.precoUnitario || 0),
-      imagem: p.imagem || p.imagemUrl || p.fotoUrl || null,
-      categoria: p.categoria || p.tipo || "Sugestão",
-    }))
-    .filter((p) => p.nome && Number.isFinite(p.preco) && p.preco > 0);
-
-  if (normalized.length) return normalized.slice(0, 12);
-
-  // fallback (pra não ficar vazio)
-  return [
-    {
-      id: "sug-agua",
-      nome: "Água sem gás",
-      preco: 3.5,
-      imagem: null,
-      categoria: "Bebidas",
-      icon: <LocalDrinkIcon fontSize="small" />,
-    },
-    {
-      id: "sug-refri",
-      nome: "Refrigerante lata 350ml",
-      preco: 6.5,
-      imagem: null,
-      categoria: "Bebidas",
-      icon: <LocalCafeIcon fontSize="small" />,
-    },
-    {
-      id: "sug-sobremesa",
-      nome: "Sobremesa do dia",
-      preco: 9.9,
-      imagem: null,
-      categoria: "Sobremesas",
-      icon: <IcecreamIcon fontSize="small" />,
-    },
+function calcularStatusLoja(rest) {
+  const dias = [
+    "domingo",
+    "segunda",
+    "terca",
+    "quarta",
+    "quinta",
+    "sexta",
+    "sabado",
   ];
+  const hoje = new Date();
+  const diaAtual = dias[hoje.getDay()];
+  const horarioHoje = rest?.horariosFuncionamento?.[diaAtual];
+
+  if (!horarioHoje || horarioHoje.fechado) return "Fechado";
+
+  const [abreHora, abreMin] = (horarioHoje.abre || "00:00")
+    .split(":")
+    .map(Number);
+  const [fechaHora, fechaMin] = (horarioHoje.fecha || "00:00")
+    .split(":")
+    .map(Number);
+
+  const agora = new Date();
+
+  const horarioAbre = new Date(agora);
+  horarioAbre.setHours(abreHora, abreMin, 0, 0);
+
+  const horarioFecha = new Date(agora);
+  horarioFecha.setHours(fechaHora, fechaMin, 0, 0);
+
+  // atravessa meia-noite
+  if (horarioFecha <= horarioAbre) {
+    horarioFecha.setDate(horarioFecha.getDate() + 1);
+    if (agora < horarioAbre) horarioAbre.setDate(horarioAbre.getDate() - 1);
+  }
+
+  return agora >= horarioAbre && agora < horarioFecha ? "Aberto agora" : "Fechado";
 }
 
-const Carrinho = () => {
-  const [itensCarrinho, setItensCarrinho] = useState([]);
-  const [restaurante, setRestaurante] = useState(null);
+function getRestauranteFromLS() {
+  try {
+    const raw = localStorage.getItem("restauranteSelecionado");
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    // às vezes vem { restaurante: {...} }
+    if (parsed?.restaurante && typeof parsed.restaurante === "object") return parsed.restaurante;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
 
-  const [abertoAgora, setAbertoAgora] = useState(false);
-  const [avisoOpen, setAvisoOpen] = useState(false);
+function plural(n, s, p) {
+  return n === 1 ? s : p;
+}
 
-  // modal horários
-  const [horariosOpen, setHorariosOpen] = useState(false);
+/**
+ * ✅ Converte saboresSelecionados em lista de strings SEMPRE
+ * (pode vir string, array de strings, array de objetos...)
+ */
+function normalizeSaboresSelecionados(val) {
+  if (!val) return [];
+  if (typeof val === "string") return val.trim() ? [val.trim()] : [];
 
-  // remover com desfazer
-  const [undoOpen, setUndoOpen] = useState(false);
-  const [ultimoRemovido, setUltimoRemovido] = useState(null); // { item, index }
+  if (Array.isArray(val)) {
+    return val
+      .map((x) => {
+        if (!x) return null;
+        if (typeof x === "string") return x;
+        if (typeof x === "object") return x.nome || x.name || null;
+        return null;
+      })
+      .filter(Boolean);
+  }
+  return [];
+}
 
-  // confirmar delete
-  const [confirmOpen, setConfirmOpen] = useState(false);
-  const [confirmIndex, setConfirmIndex] = useState(null);
+/**
+ * ✅ Mesma ideia para complementos (pode vir array de string ou array de objeto)
+ */
+function normalizeNomesArray(val) {
+  if (!val) return [];
+  if (!Array.isArray(val)) return [];
+  return val
+    .map((x) => {
+      if (!x) return null;
+      if (typeof x === "string") return x;
+      if (typeof x === "object") return x.nome || x.name || null;
+      return null;
+    })
+    .filter(Boolean);
+}
 
-  // snackbar "adicionado"
-  const [addSnackOpen, setAddSnackOpen] = useState(false);
-  const [addSnackMsg, setAddSnackMsg] = useState("");
-
-  // ✅ FIX DO "ÚLTIMO ITEM SOME": mede footer e aplica padding-bottom real + safe-area
-  const footerRef = useRef(null);
-  const [footerH, setFooterH] = useState(96);
-
+export default function Carrinho() {
   const navigate = useNavigate();
+  const { slug } = useParams();
 
-  // Carrega carrinho e restaurante
-  useEffect(() => {
-    const dados = localStorage.getItem("carrinho");
-    if (dados) {
-      const parsed = JSON.parse(dados);
-      // normaliza campos e garante preço estável
-      const normalized = parsed.map((it) => {
-        const quantidade = Number(it.quantidade || 1);
-        const precoUnitario =
-          typeof it.precoUnitario === "number"
-            ? it.precoUnitario
-            : quantidade > 0 && typeof it.precoTotal === "number"
-            ? it.precoTotal / quantidade
-            : 0;
+  const [restaurante, setRestaurante] = useState(() => getRestauranteFromLS());
+  const [statusLoja, setStatusLoja] = useState(() =>
+    calcularStatusLoja(getRestauranteFromLS())
+  );
 
-        const precoTotal =
-          typeof it.precoTotal === "number" ? it.precoTotal : precoUnitario * quantidade;
+  const [snack, setSnack] = useState({
+    open: false,
+    msg: "",
+    severity: "info",
+  });
 
-        return { ...it, quantidade, precoUnitario, precoTotal };
-      });
-
-      setItensCarrinho(normalized);
-      localStorage.setItem("carrinho", JSON.stringify(normalized));
+  const [itens, setItens] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem("carrinho")) || [];
+    } catch {
+      return [];
     }
+  });
 
-    const restauranteData = localStorage.getItem("restauranteSelecionado");
-    if (restauranteData) setRestaurante(JSON.parse(restauranteData));
+  const slugEfetivo = useMemo(() => {
+    const ls = getRestauranteFromLS();
+    return slug || ls?.slugIdentificador || ls?.slug || null;
+  }, [slug]);
+
+  const irParaCardapio = () => {
+    if (slugEfetivo) return navigate(`/p/${slugEfetivo}`);
+    return navigate("/");
+  };
+
+  // Mantém restaurante/status atualizado
+  useEffect(() => {
+    const r = getRestauranteFromLS();
+    if (r) setRestaurante(r);
+    setStatusLoja(calcularStatusLoja(r));
+
+    const t = setInterval(() => {
+      const rr = getRestauranteFromLS();
+      setStatusLoja(calcularStatusLoja(rr));
+    }, 30000);
+
+    return () => clearInterval(t);
   }, []);
 
-  // Atualiza status aberto/fechado periodicamente
+  // Persistência carrinho
   useEffect(() => {
-    const tick = () => setAbertoAgora(isOpenNow(restaurante).open);
-    tick();
-    const id = setInterval(tick, 30000);
-    return () => clearInterval(id);
-  }, [restaurante]);
+    localStorage.setItem("carrinho", JSON.stringify(itens || []));
+  }, [itens]);
 
-  // ✅ mede a altura real do footer (pra não cobrir o último item)
-  useLayoutEffect(() => {
-    if (!footerRef.current) return;
+  // ✅ Total (prioriza precoTotal que o Modal já grava pronto)
+  const total = useMemo(() => {
+    return (itens || []).reduce((acc, item) => {
+      const qtd = item.quantidade || 1;
 
-    const el = footerRef.current;
-    const update = () => {
-      const h = el.getBoundingClientRect().height || 96;
-      setFooterH(Math.ceil(h));
-    };
+      const sub = Number(item.precoTotal || 0);
+      if (sub > 0) return acc + sub;
 
-    update();
-
-    const ro = new ResizeObserver(update);
-    ro.observe(el);
-
-    window.addEventListener("resize", update);
-    return () => {
-      ro.disconnect();
-      window.removeEventListener("resize", update);
-    };
-  }, [itensCarrinho.length, abertoAgora]);
-
-  const atualizarCarrinho = (novosItens) => {
-    setItensCarrinho(novosItens);
-    localStorage.setItem("carrinho", JSON.stringify(novosItens));
-  };
-
-  const total = useMemo(
-    () => itensCarrinho.reduce((acc, item) => acc + Number(item.precoTotal || 0), 0),
-    [itensCarrinho]
-  );
-
-  const totalItens = useMemo(
-    () => itensCarrinho.reduce((acc, item) => acc + Number(item.quantidade || 0), 0),
-    [itensCarrinho]
-  );
-
-  const proximaAbertura = useMemo(() => {
-    if (!restaurante || abertoAgora) return null;
-    return getNextOpenLabel(restaurante);
-  }, [restaurante, abertoAgora]);
-
-  const pedirRemover = (index) => {
-    setConfirmIndex(index);
-    setConfirmOpen(true);
-  };
-
-  const removerItemConfirmado = () => {
-    const index = confirmIndex;
-    setConfirmOpen(false);
-    setConfirmIndex(null);
-
-    if (index == null) return;
-
-    const novos = [...itensCarrinho];
-    const [removed] = novos.splice(index, 1);
-
-    setUltimoRemovido({ item: removed, index });
-    atualizarCarrinho(novos);
-
-    setUndoOpen(true);
-  };
-
-  const desfazerRemocao = () => {
-    if (!ultimoRemovido) return;
-
-    const novos = [...itensCarrinho];
-    novos.splice(ultimoRemovido.index, 0, ultimoRemovido.item);
-    atualizarCarrinho(novos);
-
-    setUltimoRemovido(null);
-    setUndoOpen(false);
-  };
-
-  const alterarQuantidade = (index, delta) => {
-    const novos = [...itensCarrinho];
-    const item = { ...novos[index] };
-
-    const qtdAtual = Number(item.quantidade || 1);
-    const novaQtd = qtdAtual + delta;
-    if (novaQtd < 1) return;
-
-    const precoUnitario = Number(item.precoUnitario || 0);
-    item.quantidade = novaQtd;
-    item.precoTotal = precoUnitario * novaQtd;
-
-    novos[index] = item;
-    atualizarCarrinho(novos);
-  };
-
-  const handleFinalizarPedido = () => {
-    if (!abertoAgora) {
-      setAvisoOpen(true);
-      return;
-    }
-    navigate("/checkout");
-  };
-
-  const renderExtras = (item) => {
-    const blocos = [];
-
-    if (item.saboresSelecionados?.length > 0) {
-      blocos.push({
-        titulo: "Sabores",
-        opcoes: item.saboresSelecionados.map((s) => `• ${s}`),
-      });
-    }
-
-    if (item.bordaSelecionada) {
-      blocos.push({
-        titulo: "Borda",
-        opcoes: [
-          `• ${item.bordaSelecionada.nome} (+R$ ${Number(
-            item.bordaSelecionada.preco || 0
-          ).toFixed(2)})`,
-        ],
-      });
-    }
-
-    if (item.adicionalSelecionado) {
-      blocos.push({
-        titulo: "Adicional",
-        opcoes: [
-          `• ${item.adicionalSelecionado.nome} (+R$ ${Number(
-            item.adicionalSelecionado.preco || 0
-          ).toFixed(2)})`,
-        ],
-      });
-    }
-
-    if (item.complementosSelecionados?.length > 0) {
-      const opcoes = item.complementosSelecionados.map(
-        (comp) => `• ${comp.nome} (+R$ ${Number(comp.preco || 0).toFixed(2)})`
+      // fallback legado
+      const unit = Number(
+        item.precoUnitario || item.precoFinal || item.preco || item.total || 0
       );
-      blocos.push({ titulo: "Complementos", opcoes });
+      return acc + unit * qtd;
+    }, 0);
+  }, [itens]);
+
+  const alterarQtd = (index, delta) => {
+    setItens((prev) => {
+      const next = [...(prev || [])];
+      const atual = next[index];
+      if (!atual) return prev;
+
+      const nova = (atual.quantidade || 1) + delta;
+
+      if (nova <= 0) {
+        next.splice(index, 1);
+        return next;
+      }
+
+      // ✅ mantém proporcional com base no unitário (precoTotal / qtd)
+      const unit =
+        Number(atual.precoTotal || 0) > 0
+          ? Number(atual.precoTotal || 0) / (atual.quantidade || 1)
+          : Number(atual.precoUnitario || atual.precoFinal || atual.preco || atual.total || 0);
+
+      next[index] = {
+        ...atual,
+        quantidade: nova,
+        ...(Number.isFinite(unit) && unit > 0 ? { precoTotal: unit * nova } : {}),
+      };
+
+      return next;
+    });
+  };
+
+  const removerItem = (index) => {
+    setItens((prev) => {
+      const next = [...(prev || [])];
+      next.splice(index, 1);
+      return next;
+    });
+  };
+
+  const carrinhoVazio = !itens || itens.length === 0;
+
+  const renderAvatar = (size = 34) => {
+    if (restaurante?.logoUrl) {
+      return (
+        <Avatar
+          src={restaurante.logoUrl}
+          sx={{ width: size, height: size, bgcolor: "#fff" }}
+        />
+      );
+    }
+    if (restaurante?.nome) {
+      const initials = restaurante.nome
+        .split(" ")
+        .map((p) => p[0])
+        .join("")
+        .slice(0, 2)
+        .toUpperCase();
+      return (
+        <Avatar sx={{ width: size, height: size }}>{initials || "R"}</Avatar>
+      );
+    }
+    return (
+      <Avatar
+        src={DEFAULT_IMAGE_URL}
+        sx={{ width: size, height: size, bgcolor: "#fff" }}
+      />
+    );
+  };
+
+  /**
+   * ✅ Monta linhas/chips com detalhes do item
+   * - mostra metade/metade corretamente (2 sabores)
+   * - funciona com estruturas antigas e novas
+   */
+  const getDetalhes = (item) => {
+    const chips = [];
+
+    // Sabores (metade/metade)
+    const sabores = normalizeSaboresSelecionados(item.saboresSelecionados);
+    if (sabores.length) {
+      const max = Number(item.maxSabores || 0);
+
+      // se for pizza multi (max>=2) e veio só 1 sabor, mostra que faltou/está incompleto
+      // (isso ajuda a identificar quando algum item antigo no carrinho veio errado)
+      const isMulti = max >= 2 || item.pizzaMultisabor === true;
+
+      const label =
+        sabores.length >= 2
+          ? `Sabores: ${sabores.join(" + ")}`
+          : isMulti
+          ? `Sabores: ${sabores[0]} (faltou 1)`
+          : `Sabor: ${sabores[0]}`;
+
+      chips.push({ key: "sabores", label });
     }
 
+    // Borda
+    if (item?.bordaSelecionada?.nome) {
+      chips.push({ key: "borda", label: `Borda: ${item.bordaSelecionada.nome}` });
+    }
+
+    // Adicional
+    if (item?.adicionalSelecionado?.nome) {
+      chips.push({ key: "adicional", label: `Adicional: ${item.adicionalSelecionado.nome}` });
+    }
+
+    // Complementos
+    const comps = normalizeNomesArray(item.complementosSelecionados);
+    if (comps.length) {
+      chips.push({ key: "comps", label: `Complementos: ${comps.join(", ")}` });
+    }
+
+    // Tipos extras (obj: { "Bebida": [ {nome,preco}, ... ] })
     if (item.tiposExtrasSelecionados && typeof item.tiposExtrasSelecionados === "object") {
-      Object.entries(item.tiposExtrasSelecionados).forEach(([tipo, opcoes]) => {
-        if (Array.isArray(opcoes) && opcoes.length > 0) {
-          blocos.push({
-            titulo: tipo,
-            opcoes: opcoes.map(
-              (op) => `• ${op.nome}${op.preco ? ` (+R$ ${Number(op.preco).toFixed(2)})` : ""}`
-            ),
+      Object.entries(item.tiposExtrasSelecionados).forEach(([nomeTipo, itensTipo]) => {
+        const nomes = normalizeNomesArray(itensTipo);
+        if (nomes.length) {
+          chips.push({
+            key: `extra-${nomeTipo}`,
+            label: `${nomeTipo}: ${nomes.join(", ")}`,
           });
         }
       });
     }
 
-    if (item.observacao) {
-      blocos.push({ titulo: "Observação", opcoes: [`• ${item.observacao}`] });
-    }
-
-    if (!blocos.length) return null;
-
-    return (
-      <Box mt={1}>
-        {blocos.map((bloco, idx) => (
-          <Box key={idx} mb={0.5}>
-            <Typography variant="caption" fontWeight="bold">
-              {bloco.titulo}:
-            </Typography>
-            {bloco.opcoes.map((op, i) => (
-              <Typography key={i} variant="caption" display="block" ml={1} sx={{ opacity: 0.9 }}>
-                {op}
-              </Typography>
-            ))}
-          </Box>
-        ))}
-      </Box>
-    );
-  };
-
-  // HORÁRIOS
-  const horariosList = useMemo(() => {
-    const hf = restaurante?.horariosFuncionamento;
-    if (!hf) return [];
-    return diasSemana.map((dia) => {
-      const h = hf[dia];
-      const label = dia.charAt(0).toUpperCase() + dia.slice(1);
-      if (!h || h.fechado || !h.abre || !h.fecha) {
-        return { dia: label, texto: "Fechado" };
-      }
-      return { dia: label, texto: `${h.abre} às ${h.fecha}` };
-    });
-  }, [restaurante]);
-
-  // SUGESTÕES (upsell)
-  const sugestoes = useMemo(() => buildSuggestions(restaurante), [restaurante]);
-
-  const addSugestaoNoCarrinho = (sug) => {
-    const preco = Number(sug.preco || 0);
-    if (!preco) return;
-
-    // tenta encontrar item “igual” (simples: mesmo id/nome e sem extras)
-    const idxExistente = itensCarrinho.findIndex((it) => {
-      const sameId = it.id && sug.id ? it.id === sug.id : false;
-      const sameNome = (it.nome || "").toLowerCase() === (sug.nome || "").toLowerCase();
-      const semExtras =
-        !it.saboresSelecionados &&
-        !it.bordaSelecionada &&
-        !it.adicionalSelecionado &&
-        !it.complementosSelecionados &&
-        !it.tiposExtrasSelecionados &&
-        !it.observacao;
-
-      return (sameId || sameNome) && semExtras;
-    });
-
-    const novos = [...itensCarrinho];
-
-    if (idxExistente >= 0) {
-      const it = { ...novos[idxExistente] };
-      const qtd = Number(it.quantidade || 1) + 1;
-      it.quantidade = qtd;
-      // mantém precoUnitario estável
-      it.precoUnitario = Number(it.precoUnitario || preco);
-      it.precoTotal = it.precoUnitario * qtd;
-      novos[idxExistente] = it;
-    } else {
-      novos.push({
-        id: sug.id,
-        nome: sug.nome,
-        imagem: sug.imagem || null,
-        quantidade: 1,
-        precoUnitario: preco,
-        precoTotal: preco,
-        // sem extras por padrão
-      });
-    }
-
-    atualizarCarrinho(novos);
-
-    setAddSnackMsg(`${sug.nome} adicionado ao carrinho ✅`);
-    setAddSnackOpen(true);
+    return chips;
   };
 
   return (
-    <Box
-      display="flex"
-      flexDirection="column"
-      height="100dvh"
-      sx={{ backgroundColor: "#f5f5f7" }}
-    >
-      <Helmet>{restaurante ? <title>{restaurante.nome} - Carrinho</title> : null}</Helmet>
-
-      {/* APPBAR */}
+    <Box sx={{ minHeight: "100vh", backgroundColor: "#f5f5f7", pb: 4 }}>
+      {/* TOP BAR */}
       <AppBar
         position="sticky"
-        elevation={1}
+        elevation={2}
         sx={{
-          background: "linear-gradient(90deg, #ff4b8b 0%, #ff7a3d 45%, #ffb347 100%)",
+          background:
+            "linear-gradient(90deg, #ff4b8b 0%, #ff7a3d 45%, #ffb347 100%)",
         }}
       >
-        <Toolbar sx={{ display: "flex", justifyContent: "space-between", gap: 1 }}>
-          <Button
-            color="inherit"
-            startIcon={<ArrowBackIcon />}
-            onClick={() => navigate("/pedido")}
-            sx={{ textTransform: "none", fontWeight: 900 }}
+        <Toolbar sx={{ gap: 1 }}>
+          <IconButton edge="start" onClick={irParaCardapio} sx={{ color: "#fff" }}>
+            <ArrowBackIcon />
+          </IconButton>
+
+          {renderAvatar(34)}
+
+          <Typography
+            variant="subtitle1"
+            sx={{ color: "#fff", fontWeight: 900, flex: 1, minWidth: 0 }}
+            noWrap
           >
-            Voltar
-          </Button>
+            {restaurante?.nome || "Carrinho"}
+          </Typography>
 
-          {restaurante && (
-            <Box display="flex" alignItems="center" gap={1.25} sx={{ minWidth: 0 }}>
-              <Avatar
-                src={restaurante.logoUrl || FALLBACK_IMG}
-                alt={restaurante.nome}
-                sx={{ width: 36, height: 36, bgcolor: "#fff" }}
-              />
-              <Box sx={{ minWidth: 0 }}>
-                <Typography variant="subtitle2" fontWeight={900} noWrap sx={{ color: "#fff" }}>
-                  {restaurante.nome}
-                </Typography>
-                {restaurante.enderecoBairro && (
-                  <Typography variant="caption" noWrap sx={{ color: "rgba(255,255,255,0.85)" }}>
-                    {restaurante.enderecoBairro}
-                    {restaurante.enderecoCidade ? ` • ${restaurante.enderecoCidade}` : ""}
-                  </Typography>
-                )}
-              </Box>
-
-              <Chip
-                size="small"
-                label={abertoAgora ? "Aberto agora" : "Fechado agora"}
-                color={abertoAgora ? "success" : "error"}
-                sx={{ height: 22, fontSize: "0.7rem", fontWeight: 900 }}
-              />
-            </Box>
-          )}
+          <Chip
+            icon={<AccessTimeIcon fontSize="small" />}
+            label={statusLoja}
+            size="small"
+            sx={{
+              bgcolor: statusLoja?.toLowerCase?.().includes("aberto")
+                ? "#2e7d32"
+                : "#c62828",
+              color: "#fff",
+              fontWeight: 900,
+              "& .MuiChip-icon": { color: "#fff" },
+              borderRadius: "999px",
+            }}
+          />
         </Toolbar>
       </AppBar>
 
-      {/* CONTEÚDO (paddingBottom dinâmico pra não sumir o último item) */}
-      <Box
-        flex={1}
-        overflow="auto"
-        px={2}
-        pt={2}
-        sx={{
-          paddingBottom: `calc(${footerH}px + env(safe-area-inset-bottom) + 16px)`,
-          WebkitOverflowScrolling: "touch",
-        }}
-      >
-        {!abertoAgora && itensCarrinho.length > 0 && (
-          <Alert
-            severity="warning"
-            variant="outlined"
-            sx={{ mb: 2, borderRadius: 2 }}
-            icon={<AccessTimeIcon />}
-            action={
-              <Button
-                size="small"
-                onClick={() => setHorariosOpen(true)}
-                sx={{ textTransform: "none", fontWeight: 900 }}
-              >
-                Ver horários
-              </Button>
-            }
+      <Box sx={{ px: 2, pt: 2 }}>
+        <Typography variant="h6" fontWeight={1000} sx={{ mb: 1 }}>
+          Meu Carrinho
+        </Typography>
+
+        {/* EMPTY STATE */}
+        {carrinhoVazio ? (
+          <Paper
+            elevation={0}
+            sx={{
+              mt: 2,
+              p: 3,
+              borderRadius: 3,
+              textAlign: "center",
+              bgcolor: "#fff",
+              border: "1px solid rgba(0,0,0,0.06)",
+            }}
           >
-            Restaurante fechado agora.
-            {proximaAbertura ? ` Reabre: ${proximaAbertura}.` : " Confira os horários."}
-          </Alert>
-        )}
+            <Box
+              sx={{
+                width: 96,
+                height: 96,
+                borderRadius: "999px",
+                bgcolor: "rgba(255,122,61,0.10)",
+                display: "grid",
+                placeItems: "center",
+                mx: "auto",
+                mb: 1.5,
+              }}
+            >
+              <ShoppingCartOutlinedIcon sx={{ fontSize: 46, color: "#ff7a3d" }} />
+            </Box>
 
-        <Box display="flex" justifyContent="space-between" alignItems="baseline" mb={1}>
-          <Typography variant="h5" fontWeight={950}>
-            Meu Carrinho
-          </Typography>
-          {itensCarrinho.length > 0 && (
-            <Typography variant="body2" color="text.secondary">
-              {totalItens} item{totalItens !== 1 ? "s" : ""}
-            </Typography>
-          )}
-        </Box>
-
-        <Divider sx={{ mb: 2 }} />
-
-        {itensCarrinho.length === 0 ? (
-          <Box
-            mt={4}
-            textAlign="center"
-            display="flex"
-            flexDirection="column"
-            alignItems="center"
-            gap={1}
-          >
-            <Avatar src={FALLBACK_IMG} sx={{ width: 72, height: 72, mb: 1 }} />
-            <Typography variant="subtitle1" fontWeight={900}>
+            <Typography fontWeight={1000} sx={{ mb: 0.5 }}>
               Seu carrinho está vazio
             </Typography>
-            <Typography variant="body2" color="text.secondary">
-              Volte ao cardápio e escolha seus itens favoritos.
+
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+              Volte ao cardápio e adicione seus itens favoritos.
             </Typography>
+
             <Button
               variant="outlined"
-              sx={{ mt: 2, textTransform: "none", borderRadius: 2, fontWeight: 900 }}
-              onClick={() => navigate("/pedido")}
+              onClick={irParaCardapio}
+              sx={{
+                borderRadius: "999px",
+                textTransform: "none",
+                fontWeight: 900,
+                px: 3,
+                borderColor: "#ff7a3d55",
+                color: "#ff7a3d",
+                "&:hover": { borderColor: "#ff7a3d", backgroundColor: "#fff7f2" },
+              }}
             >
               Ver cardápio
             </Button>
-          </Box>
+          </Paper>
         ) : (
-          <>
-            {/* AÇÕES RÁPIDAS */}
-            <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1 }}>
-              <Button
-                variant="text"
-                onClick={() => navigate("/pedido")}
-                sx={{ textTransform: "none", fontWeight: 950 }}
-              >
-                + Adicionar mais itens
-              </Button>
+          <Paper
+            elevation={0}
+            sx={{
+              mt: 2,
+              borderRadius: 3,
+              overflow: "hidden",
+              bgcolor: "#fff",
+              border: "1px solid rgba(0,0,0,0.06)",
+            }}
+          >
+            {(itens || []).map((item, index) => {
+              const qtd = item.quantidade || 1;
 
-              <Button
-                variant="text"
-                color="inherit"
-                startIcon={<AccessTimeIcon />}
-                onClick={() => setHorariosOpen(true)}
-                sx={{ textTransform: "none", fontWeight: 900, opacity: 0.85 }}
-              >
-                Horários
-              </Button>
-            </Stack>
+              const sub = Number(item.precoTotal || 0);
+              const unitFallback = Number(
+                item.precoUnitario || item.precoFinal || item.preco || item.total || 0
+              );
+              const subtotal = sub > 0 ? sub : unitFallback * qtd;
 
-            {/* ITENS DO CARRINHO */}
-            {itensCarrinho.map((item, idx) => (
-              <Fade in key={idx} timeout={250}>
-                <Paper
-                  elevation={0}
-                  sx={{
-                    p: 2,
-                    mb: 2,
-                    display: "flex",
-                    gap: 2,
-                    borderRadius: 3,
-                    bgcolor: "#ffffff",
-                    border: "1px solid #e7e7ee",
-                    boxShadow: "0px 2px 10px rgba(15,23,42,0.06)",
-                  }}
-                >
-                  <Avatar
-                    src={item.imagem || FALLBACK_IMG}
-                    alt={item.nome}
-                    variant="rounded"
-                    sx={{ width: 72, height: 72, flexShrink: 0, borderRadius: 2 }}
-                  />
+              const detalhes = getDetalhes(item);
 
-                  <Box flex={1} minWidth={0}>
-                    <Box display="flex" justifyContent="space-between" alignItems="flex-start" gap={1}>
-                      <Box minWidth={0}>
-                        <Typography fontWeight={950} noWrap>
-                          {item.nome}
-                        </Typography>
-                        <Typography variant="body2" color="text.secondary">
-                          R$ {Number(item.precoUnitario || 0).toFixed(2)} cada
-                        </Typography>
-                      </Box>
+              return (
+                <Box key={item._id || index}>
+                  <Box sx={{ display: "flex", gap: 1.25, p: 2, alignItems: "flex-start" }}>
+                    <Avatar
+                      variant="rounded"
+                      src={item.imagem || DEFAULT_IMAGE_URL}
+                      alt={item.nome}
+                      sx={{ width: 62, height: 62, borderRadius: 2, bgcolor: "#fff" }}
+                    />
 
-                      <Tooltip title="Remover item">
-                        <IconButton
-                          color="error"
-                          size="small"
-                          onClick={() => pedirRemover(idx)}
-                          sx={{ mt: -0.5 }}
-                        >
-                          <DeleteIcon fontSize="small" />
-                        </IconButton>
-                      </Tooltip>
-                    </Box>
+                    <Box sx={{ flex: 1, minWidth: 0 }}>
+                      <Typography fontWeight={1000} noWrap>
+                        {item.nome}
+                      </Typography>
 
-                    <Box display="flex" alignItems="center" gap={1.5} mt={1} flexWrap="wrap">
-                      {/* STEPPER */}
-                      <Box
-                        display="flex"
-                        alignItems="center"
-                        sx={{
-                          border: "1px solid #e7e7ee",
-                          borderRadius: 2,
-                          overflow: "hidden",
-                          bgcolor: "#fafafe",
-                        }}
-                      >
-                        <Tooltip title={Number(item.quantidade || 1) <= 1 ? "Mínimo 1" : "Diminuir"}>
-                          <span>
-                            <IconButton
-                              size="small"
-                              onClick={() => alterarQuantidade(idx, -1)}
-                              disabled={Number(item.quantidade || 1) <= 1}
-                              sx={{ borderRadius: 0 }}
-                            >
-                              <RemoveIcon fontSize="small" />
-                            </IconButton>
-                          </span>
-                        </Tooltip>
-
-                        <Box px={1.25}>
-                          <Typography variant="body2" fontWeight={950}>
-                            {Number(item.quantidade || 1)}x
-                          </Typography>
-                        </Box>
-
-                        <Tooltip title="Aumentar">
-                          <IconButton
-                            size="small"
-                            onClick={() => alterarQuantidade(idx, 1)}
-                            sx={{ borderRadius: 0 }}
-                          >
-                            <AddIcon fontSize="small" />
-                          </IconButton>
-                        </Tooltip>
-                      </Box>
-
-                      <Chip
-                        size="small"
-                        label={`Total: R$ ${Number(item.precoTotal || 0).toFixed(2)}`}
-                        sx={{ fontWeight: 950 }}
-                      />
-                    </Box>
-
-                    {renderExtras(item)}
-                  </Box>
-                </Paper>
-              </Fade>
-            ))}
-
-            {/* ✅ SUGESTÕES (UPSELL) */}
-            {sugestoes?.length > 0 && (
-              <Box mt={1}>
-                <Box display="flex" alignItems="baseline" justifyContent="space-between" mb={1}>
-                  <Typography variant="subtitle1" fontWeight={950}>
-                    Que tal completar o pedido?
-                  </Typography>
-                  <Typography variant="caption" color="text.secondary">
-                    Sugestões rápidas
-                  </Typography>
-                </Box>
-
-                <Box
-                  sx={{
-                    display: "flex",
-                    gap: 1.25,
-                    overflowX: "auto",
-                    pb: 1,
-                    WebkitOverflowScrolling: "touch",
-                    scrollSnapType: "x mandatory",
-                  }}
-                >
-                  {sugestoes.slice(0, 12).map((sug) => (
-                    <Paper
-                      key={sug.id}
-                      elevation={0}
-                      sx={{
-                        minWidth: 240,
-                        scrollSnapAlign: "start",
-                        p: 1.25,
-                        borderRadius: 3,
-                        border: "1px solid #e7e7ee",
-                        bgcolor: "#fff",
-                        boxShadow: "0px 2px 10px rgba(15,23,42,0.05)",
-                      }}
-                    >
-                      <Box display="flex" gap={1.25} alignItems="center">
-                        <Avatar
-                          variant="rounded"
-                          src={sug.imagem || FALLBACK_IMG}
-                          sx={{ width: 56, height: 56, borderRadius: 2 }}
-                        />
-                        <Box flex={1} minWidth={0}>
-                          <Typography fontWeight={950} noWrap>
-                            {sug.nome}
-                          </Typography>
-                          <Box display="flex" alignItems="center" gap={1} mt={0.25}>
+                      {/* detalhes (chips) */}
+                      {detalhes.length > 0 && (
+                        <Box sx={{ mt: 0.6, display: "flex", gap: 0.6, flexWrap: "wrap" }}>
+                          {detalhes.map((d, i) => (
                             <Chip
+                              key={`${d.key}-${i}`}
+                              label={d.label}
                               size="small"
-                              label={sug.categoria || "Sugestão"}
-                              sx={{ fontWeight: 800, opacity: 0.9 }}
-                              icon={sug.icon || undefined}
+                              sx={{
+                                height: 22,
+                                borderRadius: "999px",
+                                bgcolor: "rgba(17,24,39,0.06)",
+                                fontWeight: 800,
+                              }}
                             />
-                            <Typography variant="body2" color="text.secondary" sx={{ whiteSpace: "nowrap" }}>
-                              R$ {Number(sug.preco || 0).toFixed(2)}
-                            </Typography>
-                          </Box>
+                          ))}
                         </Box>
+                      )}
 
-                        <Tooltip title="Adicionar">
-                          <IconButton
-                            onClick={() => addSugestaoNoCarrinho(sug)}
-                            sx={{
-                              borderRadius: 2,
-                              border: "1px solid #e7e7ee",
-                              bgcolor: "#fafafe",
-                            }}
-                          >
-                            <AddShoppingCartIcon fontSize="small" />
-                          </IconButton>
-                        </Tooltip>
-                      </Box>
-                    </Paper>
-                  ))}
+                      {item.observacao && (
+                        <Typography
+                          variant="caption"
+                          color="text.secondary"
+                          sx={{ display: "block", mt: 0.6 }}
+                        >
+                          Obs: {item.observacao}
+                        </Typography>
+                      )}
+
+                      <Typography variant="body2" color="primary" fontWeight={1000} sx={{ mt: 0.8 }}>
+                        {formatBRL(subtotal)}
+                      </Typography>
+                    </Box>
+
+                    <Box sx={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 1 }}>
+                      <Stack direction="row" spacing={0.5} alignItems="center">
+                        <IconButton size="small" onClick={() => alterarQtd(index, -1)}>
+                          <RemoveIcon fontSize="small" />
+                        </IconButton>
+                        <Typography fontWeight={900} sx={{ minWidth: 18, textAlign: "center" }}>
+                          {qtd}
+                        </Typography>
+                        <IconButton size="small" onClick={() => alterarQtd(index, +1)}>
+                          <AddIcon fontSize="small" />
+                        </IconButton>
+                      </Stack>
+
+                      <IconButton
+                        onClick={() => removerItem(index)}
+                        aria-label="Remover item"
+                        sx={{ mt: -0.25 }}
+                      >
+                        <DeleteIcon />
+                      </IconButton>
+                    </Box>
+                  </Box>
+
+                  {index < itens.length - 1 && <Divider />}
                 </Box>
-              </Box>
-            )}
-          </>
+              );
+            })}
+
+            <Divider />
+
+            <Box sx={{ p: 2 }}>
+              <Stack direction="row" justifyContent="space-between" alignItems="center">
+                <Typography fontWeight={1000}>
+                  Total{" "}
+                  <Typography component="span" variant="caption" color="text.secondary" sx={{ fontWeight: 900 }}>
+                    ({itens.length} {plural(itens.length, "item", "itens")})
+                  </Typography>
+                </Typography>
+
+                <Typography fontWeight={1100} color="primary">
+                  {formatBRL(total)}
+                </Typography>
+              </Stack>
+
+              <Button
+                fullWidth
+                variant="contained"
+                sx={{
+                  mt: 2,
+                  borderRadius: "999px",
+                  textTransform: "none",
+                  fontWeight: 1000,
+                  bgcolor: "#ff7a3d",
+                  "&:hover": { bgcolor: "#ff6b2a" },
+                }}
+                onClick={() => {
+                  setSnack({
+                    open: true,
+                    msg: "Próximo passo: finalizar pedido (implementar/ligar rota).",
+                    severity: "info",
+                  });
+                }}
+              >
+                Finalizar pedido
+              </Button>
+
+              <Button
+                fullWidth
+                variant="text"
+                sx={{ mt: 1, borderRadius: "999px", textTransform: "none", fontWeight: 900 }}
+                onClick={irParaCardapio}
+              >
+                Continuar comprando
+              </Button>
+            </Box>
+          </Paper>
         )}
       </Box>
 
-      {/* ✅ RODAPÉ FIXO (com safe-area + medição dinâmica) */}
-      {itensCarrinho.length > 0 && (
-        <Box
-          ref={footerRef}
-          position="fixed"
-          bottom={0}
-          left={0}
-          right={0}
-          bgcolor="#ffffff"
-          borderTop="1px solid #e7e7ee"
-          px={2}
-          py={1.5}
-          sx={{
-            paddingBottom: "calc(12px + env(safe-area-inset-bottom))",
-            backdropFilter: "blur(10px)",
-          }}
-          boxShadow={8}
-          zIndex={1200}
-        >
-          <Box display="flex" justifyContent="space-between" alignItems="center" gap={2} flexWrap="wrap">
-            <Box>
-              <Typography
-                variant="caption"
-                color="text.secondary"
-                sx={{ textTransform: "uppercase", letterSpacing: 0.6 }}
-              >
-                {totalItens} item{totalItens !== 1 ? "s" : ""} • Total do pedido
-              </Typography>
-              <Typography variant="h6" fontWeight={950}>
-                R$ {Number(total || 0).toFixed(2)}
-              </Typography>
-              {!abertoAgora && proximaAbertura && (
-                <Typography variant="caption" color="text.secondary">
-                  Reabre: {proximaAbertura}
-                </Typography>
-              )}
-            </Box>
-
-            <Box display="flex" gap={1} sx={{ flex: 1, minWidth: 220 }}>
-              {!abertoAgora && (
-                <Button
-                  variant="outlined"
-                  onClick={() => setHorariosOpen(true)}
-                  sx={{
-                    textTransform: "none",
-                    fontWeight: 950,
-                    borderRadius: 2,
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  Ver horários
-                </Button>
-              )}
-
-              <Button
-                variant="contained"
-                size="large"
-                onClick={handleFinalizarPedido}
-                sx={{
-                  flex: 1,
-                  textTransform: "none",
-                  fontWeight: 950,
-                  borderRadius: 2,
-                  background: "linear-gradient(90deg,#ff4b8b,#ff7a3d,#ffb347)",
-                  "&:hover": {
-                    opacity: 0.92,
-                    background: "linear-gradient(90deg,#ff4b8b,#ff7a3d,#ffb347)",
-                  },
-                  ...(abertoAgora ? {} : { opacity: 0.78 }),
-                }}
-              >
-                {abertoAgora ? "Finalizar pedido" : "Restaurante fechado"}
-              </Button>
-            </Box>
-          </Box>
-        </Box>
-      )}
-
-      {/* Snackbar quando tenta finalizar com restaurante fechado */}
       <Snackbar
-        open={avisoOpen}
+        open={snack.open}
         autoHideDuration={3500}
-        onClose={() => setAvisoOpen(false)}
+        onClose={() => setSnack((s) => ({ ...s, open: false }))}
         anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
       >
         <Alert
-          onClose={() => setAvisoOpen(false)}
-          severity="warning"
+          onClose={() => setSnack((s) => ({ ...s, open: false }))}
+          severity={snack.severity || "info"}
           variant="filled"
           sx={{ width: "100%" }}
         >
-          Restaurante fechado no momento. Pedidos só podem ser finalizados no horário de funcionamento.
+          {snack.msg}
         </Alert>
       </Snackbar>
-
-      {/* Snackbar desfazer remoção */}
-      <Snackbar
-        open={undoOpen}
-        autoHideDuration={4500}
-        onClose={() => setUndoOpen(false)}
-        anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
-      >
-        <Alert
-          severity="info"
-          variant="filled"
-          sx={{ width: "100%" }}
-          action={
-            <Button
-              color="inherit"
-              size="small"
-              onClick={desfazerRemocao}
-              sx={{ textTransform: "none", fontWeight: 950 }}
-            >
-              Desfazer
-            </Button>
-          }
-        >
-          Item removido do carrinho.
-        </Alert>
-      </Snackbar>
-
-      {/* Snackbar item adicionado */}
-      <Snackbar
-        open={addSnackOpen}
-        autoHideDuration={2500}
-        onClose={() => setAddSnackOpen(false)}
-        anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
-      >
-        <Alert
-          onClose={() => setAddSnackOpen(false)}
-          severity="success"
-          variant="filled"
-          sx={{ width: "100%" }}
-        >
-          {addSnackMsg}
-        </Alert>
-      </Snackbar>
-
-      {/* Confirmar remoção */}
-      <Dialog open={confirmOpen} onClose={() => setConfirmOpen(false)}>
-        <DialogTitle>Remover item?</DialogTitle>
-        <DialogContent>
-          <Typography variant="body2" color="text.secondary">
-            Você pode desfazer logo em seguida.
-          </Typography>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setConfirmOpen(false)} sx={{ textTransform: "none" }}>
-            Cancelar
-          </Button>
-          <Button color="error" onClick={removerItemConfirmado} sx={{ textTransform: "none", fontWeight: 950 }}>
-            Remover
-          </Button>
-        </DialogActions>
-      </Dialog>
-
-      {/* Horários */}
-      <Dialog open={horariosOpen} onClose={() => setHorariosOpen(false)} fullWidth maxWidth="xs">
-        <DialogTitle>Horários de funcionamento</DialogTitle>
-        <DialogContent>
-          <Stack spacing={1}>
-            {horariosList.length ? (
-              horariosList.map((h) => (
-                <Box key={h.dia} display="flex" justifyContent="space-between" gap={2}>
-                  <Typography variant="body2" fontWeight={950}>
-                    {h.dia}
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary">
-                    {h.texto}
-                  </Typography>
-                </Box>
-              ))
-            ) : (
-              <Typography variant="body2" color="text.secondary">
-                Horários não informados.
-              </Typography>
-            )}
-          </Stack>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setHorariosOpen(false)} sx={{ textTransform: "none", fontWeight: 950 }}>
-            Fechar
-          </Button>
-        </DialogActions>
-      </Dialog>
     </Box>
   );
-};
-
-export default Carrinho;
+}
