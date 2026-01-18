@@ -45,31 +45,38 @@ import ExpandLessIcon from "@mui/icons-material/ExpandLess";
 // ✅ Mercado Pago Brick
 import { initMercadoPago, CardPayment } from "@mercadopago/sdk-react";
 
-const API_URL = import.meta.env.VITE_API_URL || "https://api.movyo.delivery/api";
+/**
+ * ✅ DICA (CSP):
+ * Secure Fields usa IFRAME. Se você tiver CSP, libere frame-src/script-src para MP.
+ * Caso contrário, dá "Secure Fields failed".
+ * (O MP documenta que Secure Fields são campos via iframe). :contentReference[oaicite:4]{index=4}
+ */
+
+// ====== API base robusta ======
+const RAW_API = (import.meta.env.VITE_API_URL || "https://api.movyo.delivery").replace(/\/$/, "");
+const API = RAW_API.endsWith("/api") ? RAW_API : `${RAW_API}/api`;
+
+// ====== Mapbox ======
 const MAPBOX_TOKEN =
   "pk.eyJ1IjoiaGVsaW93OSIsImEiOiJjbTljNDRnazgwZ3BmMmxwdW9nbWk1c3ZmIn0.NR96Um-T_CqTI3jDb7c2OQ";
 
-const MP_PUBLIC_KEY = import.meta.env.VITE_MP_PUBLIC_KEY || ""; // ✅ coloque no .env
+// ====== MP Public Key (trim!) ======
+const MP_PUBLIC_KEY = String(import.meta.env.VITE_MP_PUBLIC_KEY || "").trim();
 
+// ====== Constantes ======
 const LS_CLIENT_PHONE_KEY = "cliente_telefone";
 const DEFAULT_IMAGE_URL = "";
 
-const PIX_STATUS_PATH = "/publico/status";
-const MP_STATUS_PUBLICO_PATH = "/mercadopago/status";
+const PIX_STATUS_URL = `${API}/publico/status`;
+const MP_STATUS_PUBLICO_URL = `${API}/mercadopago/status`;
+const RESTAURANTE_PUBLICO_URL = `${API}/restaurantes/publico`;
 
 const PIX_TTL_MS = 15 * 60 * 1000;
-
-// ✅ taxa cartão (default 3,8% — pode vir do restaurante)
 const DEFAULT_CARD_FEE_RATE = 0.038;
 
 const round2 = (v) => Math.round((Number(v || 0) + Number.EPSILON) * 100) / 100;
+const money = (v) => Number(v || 0).toFixed(2);
 
-const money = (v) => {
-  const num = Number(v || 0);
-  return num.toFixed(2);
-};
-
-// ✅ validação simples de email
 const isValidEmail = (email) => {
   const e = String(email || "").trim().toLowerCase();
   if (!e) return false;
@@ -77,16 +84,19 @@ const isValidEmail = (email) => {
 };
 
 /**
- * ✅ INIT MERCADO PAGO APENAS 1 VEZ
+ * ✅ INIT MERCADO PAGO 1 VEZ (por public key)
  */
 function initMpOnce() {
   if (typeof window === "undefined") return false;
   if (!MP_PUBLIC_KEY) return false;
-  if (window.__MP_INITED__) return true;
+
+  // se já iniciou com essa pk, ok
+  if (window.__MP_INITED__ && window.__MP_PK__ === MP_PUBLIC_KEY) return true;
 
   try {
     initMercadoPago(MP_PUBLIC_KEY, { locale: "pt-BR" });
     window.__MP_INITED__ = true;
+    window.__MP_PK__ = MP_PUBLIC_KEY;
     return true;
   } catch (e) {
     console.error("Erro initMercadoPago:", e);
@@ -97,12 +107,12 @@ function initMpOnce() {
 const Checkout = () => {
   const navigate = useNavigate();
 
-  // DADOS DO CLIENTE
+  // ===== DADOS CLIENTE =====
   const [telefone, setTelefone] = useState("");
   const [nome, setNome] = useState("");
-  const [email, setEmail] = useState(""); // opcional no Pix, obrigatório no Brick
+  const [email, setEmail] = useState("");
 
-  // ENDEREÇOS
+  // ===== ENDEREÇOS =====
   const [enderecosCliente, setEnderecosCliente] = useState([]);
   const [enderecoSelecionado, setEnderecoSelecionado] = useState(-1);
   const [endereco, setEndereco] = useState({
@@ -116,14 +126,14 @@ const Checkout = () => {
     complemento: "",
   });
 
-  // CONTROLES
+  // ===== CONTROLES =====
   const [carregando, setCarregando] = useState(false);
   const [clienteCarregado, setClienteCarregado] = useState(false);
 
-  // ✅ frete “visual”
+  // frete visual
   const [frete, setFrete] = useState(0);
 
-  // ✅ congela frete/total quando seleciona cartão (evita Brick recriar / divergência)
+  // congela frete no cartão
   const [freteCongelado, setFreteCongelado] = useState(null);
   const [latLngCongelado, setLatLngCongelado] = useState(null); // { lat, lng }
 
@@ -153,6 +163,16 @@ const Checkout = () => {
   const [mpConectado, setMpConectado] = useState(false);
   const [mpCarregando, setMpCarregando] = useState(true);
 
+  // Restaurante
+  const restauranteRaw = JSON.parse(localStorage.getItem("restauranteSelecionado") || "null");
+  const restauranteInicial = restauranteRaw?.restaurante ?? restauranteRaw;
+  const [restaurante, setRestaurante] = useState(restauranteInicial || null);
+  const [restCarregando, setRestCarregando] = useState(false);
+  const [restConfirmado, setRestConfirmado] = useState(false);
+
+  // MP init lazy
+  const [mpInited, setMpInited] = useState(false);
+
   // RESUMO PRÉ-PAGAMENTO
   const [itensPreview, setItensPreview] = useState([]);
   const [subtotalPreview, setSubtotalPreview] = useState(0);
@@ -162,7 +182,7 @@ const Checkout = () => {
   const [resumoOpen, setResumoOpen] = useState(true);
   const [confirmEditarPix, setConfirmEditarPix] = useState(false);
 
-  // FEEDBACK
+  // Feedback
   const [cepErro, setCepErro] = useState(false);
   const [cepHelper, setCepHelper] = useState("");
   const [snackbar, setSnackbar] = useState({
@@ -171,26 +191,71 @@ const Checkout = () => {
     severity: "info",
   });
 
-  const restauranteRaw = JSON.parse(localStorage.getItem("restauranteSelecionado") || "null");
-  const restaurante = restauranteRaw?.restaurante ?? restauranteRaw;
+  const pollRef = useRef(null);
+  const countdownRef = useRef(null);
 
-  // ✅ flag público do restaurante: habilita/desabilita cartão na vitrine
+  // ===== FIX BRICK: lock amount + retry =====
+  const [cardPreparing, setCardPreparing] = useState(false);
+  const [cardAmountLocked, setCardAmountLocked] = useState(null);
+  const [brickAttempt, setBrickAttempt] = useState(0);
+  const [brickFatalMsg, setBrickFatalMsg] = useState("");
+  const brickRetryRef = useRef(0);
+
+  const toast = (severity, message) => setSnackbar({ open: true, severity, message });
+
+  const telLimpo = useMemo(() => telefone.replace(/\D/g, ""), [telefone]);
+
+  const isHttpsOk = useMemo(() => {
+    if (typeof window === "undefined") return false;
+    const isLocal = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
+    return window.location.protocol === "https:" || isLocal;
+  }, []);
+
+  const isInIframe = useMemo(() => {
+    if (typeof window === "undefined") return false;
+    try {
+      return window.self !== window.top;
+    } catch {
+      return true;
+    }
+  }, []);
+
+  const isPix = (formaPagamento || "").toLowerCase() === "pix";
+  const isCard = (formaPagamento || "").toLowerCase() === "cartaocredito";
+
+  // ✅ só considera cartão "ativo" depois que confirmamos/checamos restaurante
   const cartaoAtivoNaVitrine = useMemo(() => {
-    // lojas antigas: se não vier o campo, assume true para não quebrar
+    if (!restConfirmado) return false;
     return restaurante?.pagamentoCartaoAtivo !== false;
-  }, [restaurante]);
+  }, [restConfirmado, restaurante]);
 
-  // ✅ taxa vinda do backend (ex: 3.8). fallback 3.8%
   const cardFeeRate = useMemo(() => {
     const p = Number(restaurante?.taxaCartaoCreditoAvistaPercent);
     if (Number.isFinite(p) && p > 0) return p / 100;
     return DEFAULT_CARD_FEE_RATE;
   }, [restaurante]);
 
-  const pollRef = useRef(null);
-  const countdownRef = useRef(null);
+  // disponibilidade real
+  const pixDisponivel = !!mpConectado;
+  const cartaoDisponivel = !!mpConectado && cartaoAtivoNaVitrine;
 
-  const toast = (severity, message) => setSnackbar({ open: true, severity, message });
+  // “pagamentos carregados”
+  const pagamentosCarregados = !mpCarregando && restConfirmado;
+
+  const pixTemPedido = Boolean(resumoPedido?._id) && isPix && Boolean(qrCodeTexto || qrCodeUrl);
+  const pixExpirado = useMemo(() => {
+    if (!pixTemPedido) return false;
+    if (!pixExpiresAt) return false;
+    const st = String(pixStatus || "").toLowerCase();
+    const jaPago = st === "approved" || st === "paid" || st === "pago";
+    if (jaPago) return false;
+    return Date.now() >= pixExpiresAt;
+  }, [pixTemPedido, pixExpiresAt, pixStatus]);
+
+  const pixAtivo = pixTemPedido && !pixExpirado;
+  const travarFormulario = pixAtivo || carregando;
+
+  const handleSnackbarClose = () => setSnackbar((prev) => ({ ...prev, open: false }));
 
   const limparPollingPix = () => {
     if (pollRef.current) {
@@ -213,8 +278,7 @@ const Checkout = () => {
     };
   }, []);
 
-  // ========= HELPERS =========
-
+  // ===== helpers =====
   const formatarTelefone = (valor) => {
     const numeros = valor.replace(/\D/g, "");
     if (numeros.length <= 10) {
@@ -266,47 +330,104 @@ const Checkout = () => {
     return total;
   };
 
-  const telLimpo = useMemo(() => telefone.replace(/\D/g, ""), [telefone]);
-
-  // ========= INIT MP =========
-  const mpInited = useMemo(() => initMpOnce(), []);
-
-  const isHttpsOk = useMemo(() => {
-    if (typeof window === "undefined") return false;
-    const isLocal = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
-    return window.location.protocol === "https:" || isLocal;
-  }, []);
-
-  const isPix = (formaPagamento || "").toLowerCase() === "pix";
-  const isCard = (formaPagamento || "").toLowerCase() === "cartaocredito";
-
-  // ✅ Disponibilidade real por regras
-  const pixDisponivel = !!mpConectado; // no seu fluxo, Pix só funciona com MP conectado
-  const cartaoDisponivel = !!mpConectado && cartaoAtivoNaVitrine;
-
-  const pixTemPedido = Boolean(resumoPedido?._id) && isPix && Boolean(qrCodeTexto || qrCodeUrl);
-  const pixExpirado = useMemo(() => {
-    if (!pixTemPedido) return false;
-    if (!pixExpiresAt) return false;
-    const st = String(pixStatus || "").toLowerCase();
-    const jaPago = st === "approved" || st === "paid" || st === "pago";
-    if (jaPago) return false;
-    return Date.now() >= pixExpiresAt;
-  }, [pixTemPedido, pixExpiresAt, pixStatus]);
-
-  const pixAtivo = pixTemPedido && !pixExpirado;
-  const travarFormulario = pixAtivo || carregando;
-
-  // ========= DEBUG MP (produção) =========
+  // ===== BUSCA RESTAURANTE ATUALIZADO =====
   useEffect(() => {
-    console.log("[MP] API_URL:", API_URL);
-    console.log("[MP] MP_PUBLIC_KEY prefix:", (MP_PUBLIC_KEY || "").slice(0, 12));
-    console.log("[MP] isHttpsOk:", isHttpsOk);
-    console.log("[MP] mpConectado:", mpConectado);
-    console.log("[PAY] cartaoAtivoNaVitrine:", cartaoAtivoNaVitrine);
-  }, [mpConectado, isHttpsOk, cartaoAtivoNaVitrine]);
+    const id = restauranteInicial?._id || restaurante?._id;
+    if (!id) return;
 
-  // ========= CARRINHO + RESTAURA PIX PENDENTE =========
+    const controller = new AbortController();
+
+    (async () => {
+      try {
+        setRestCarregando(true);
+
+        const { data } = await axios.get(`${RESTAURANTE_PUBLICO_URL}/${id}`, {
+          signal: controller.signal,
+        });
+
+        const r = data?.restaurante ?? data;
+        if (r?._id) {
+          setRestaurante((prev) => ({ ...(prev || {}), ...r }));
+
+          // atualiza localStorage
+          try {
+            const raw = JSON.parse(localStorage.getItem("restauranteSelecionado") || "null");
+            if (raw) {
+              const merged = raw?.restaurante
+                ? { ...raw, restaurante: { ...raw.restaurante, ...r } }
+                : { ...raw, ...r };
+              localStorage.setItem("restauranteSelecionado", JSON.stringify(merged));
+            }
+          } catch {}
+
+          // Se estava no cartão e backend diz off => volta pro Pix
+          const ativo = r?.pagamentoCartaoAtivo !== false;
+          if (!ativo) {
+            setFormaPagamento("Pix");
+            setFreteCongelado(null);
+            setLatLngCongelado(null);
+            setCardAmountLocked(null);
+          }
+        }
+      } catch {
+        // segue com cache
+      } finally {
+        setRestCarregando(false);
+        setRestConfirmado(true);
+      }
+    })();
+
+    return () => controller.abort();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [restauranteInicial?._id]);
+
+  // ===== MP STATUS =====
+  useEffect(() => {
+    const fetchMpStatus = async () => {
+      try {
+        if (!restaurante?._id) {
+          setMpConectado(false);
+          setMpCarregando(false);
+          return;
+        }
+        const { data } = await axios.get(`${MP_STATUS_PUBLICO_URL}/${restaurante._id}`);
+        setMpConectado(!!data?.conectado);
+      } catch {
+        setMpConectado(false);
+      } finally {
+        setMpCarregando(false);
+      }
+    };
+    fetchMpStatus();
+  }, [restaurante?._id]);
+
+  // Se está em cartão e cartão ficou indisponível, volta pro Pix e limpa lock
+  useEffect(() => {
+    if (!pagamentosCarregados) return;
+
+    if (isCard && !cartaoDisponivel) {
+      setFormaPagamento("Pix");
+      setFreteCongelado(null);
+      setLatLngCongelado(null);
+      setCardAmountLocked(null);
+    }
+
+    if (isPix && !pixDisponivel) {
+      if (cartaoDisponivel) setFormaPagamento("CartaoCredito");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pagamentosCarregados, mpConectado, cartaoAtivoNaVitrine]);
+
+  // init MP somente quando realmente vai usar cartão
+  useEffect(() => {
+    const needCard = pagamentosCarregados && isCard && cartaoDisponivel;
+    if (!needCard) return;
+
+    const ok = initMpOnce();
+    setMpInited(ok);
+  }, [pagamentosCarregados, isCard, cartaoDisponivel]);
+
+  // ===== Carrinho + restore pix pendente =====
   useEffect(() => {
     const savedPhone = (localStorage.getItem(LS_CLIENT_PHONE_KEY) || "").replace(/\D/g, "");
     if (savedPhone && !telefone) setTelefone(formatarTelefone(savedPhone));
@@ -352,13 +473,11 @@ const Checkout = () => {
           iniciarPollingPix(pend._id, expiresAt);
         }
       }
-    } catch {
-      // ignore
-    }
+    } catch {}
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ========= COUNTDOWN =========
+  // ===== Countdown Pix =====
   useEffect(() => {
     limparCountdownPix();
     if (!pixTemPedido || !pixExpiresAt) return;
@@ -385,50 +504,13 @@ const Checkout = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pixTemPedido, pixExpiresAt, pixStatus]);
 
-  // ========= MP STATUS =========
-  useEffect(() => {
-    const fetchMpStatus = async () => {
-      try {
-        if (!restaurante?._id) {
-          setMpConectado(false);
-          setMpCarregando(false);
-          return;
-        }
-        const { data } = await axios.get(`${API_URL}${MP_STATUS_PUBLICO_PATH}/${restaurante._id}`);
-        setMpConectado(!!data?.conectado);
-      } catch {
-        setMpConectado(false);
-      } finally {
-        setMpCarregando(false);
-      }
-    };
-    fetchMpStatus();
-  }, [restaurante?._id]);
-
-  // ✅ garante consistência da forma de pagamento com as regras (pix/cartão)
-  useEffect(() => {
-    if (mpCarregando) return;
-
-    // se está em cartão mas cartão indisponível -> cai pra Pix (se disponível)
-    if (isCard && !cartaoDisponivel) {
-      if (pixDisponivel) setFormaPagamento("Pix");
-      else toast("warning", "Pagamento com cartão indisponível para esta loja.");
-    }
-
-    // se está em Pix mas Pix indisponível -> cai pro cartão (se disponível)
-    if (isPix && !pixDisponivel) {
-      if (cartaoDisponivel) setFormaPagamento("CartaoCredito");
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mpCarregando, mpConectado, cartaoAtivoNaVitrine]);
-
-  // ========= BUSCAR CLIENTE =========
+  // ===== Buscar cliente =====
   const buscarCliente = async () => {
     const t = telLimpo;
     if (t.length < 10) return;
 
     try {
-      const res = await axios.get(`${API_URL}/clientes/${t}`);
+      const res = await axios.get(`${API}/clientes/${t}`);
       if (res.data) {
         setNome(res.data.nome || "");
         const ends = res.data.enderecos || [];
@@ -448,7 +530,7 @@ const Checkout = () => {
     }
   };
 
-  // ========= CEP =========
+  // ===== ViaCEP =====
   const buscarEnderecoPorCep = async (cepNumerico) => {
     try {
       const res = await fetch(`https://viacep.com.br/ws/${cepNumerico}/json/`);
@@ -465,7 +547,7 @@ const Checkout = () => {
     }
   };
 
-  // ========= GEOCODIFICA =========
+  // ===== Geocodificação Mapbox =====
   const geocodificarEndereco = async () => {
     const fullAddress = `${endereco.rua} ${endereco.numero}, ${endereco.bairro}, ${endereco.cidade} - ${endereco.estado}, ${endereco.cep}, Brazil`;
     const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(
@@ -482,10 +564,10 @@ const Checkout = () => {
     throw new Error("Endereço não localizado");
   };
 
-  // ========= FRETE =========
+  // ===== Frete =====
   const calcularFrete = async (lng, lat) => {
     try {
-      const res = await axios.get(`${API_URL}/frete/dados/${restaurante._id}`);
+      const res = await axios.get(`${API}/frete/dados/${restaurante._id}`);
       const { areas = [], faixasRaio = [], localizacaoRestaurante } = res.data;
 
       const pontoCliente = turf.point([lng, lat]);
@@ -522,7 +604,7 @@ const Checkout = () => {
     }
   };
 
-  // ✅ Recalcula frete automaticamente APENAS se NÃO estiver no cartão (evita reinicializar fluxo)
+  // Recalcula frete automaticamente apenas se NÃO estiver no cartão (cartão trava)
   useEffect(() => {
     const calcularFreteEndereco = async () => {
       if (!restaurante?._id) return;
@@ -531,7 +613,6 @@ const Checkout = () => {
       try {
         const [lng, lat] = await geocodificarEndereco();
         const valorFrete = await calcularFrete(lng, lat);
-
         setFrete(valorFrete);
       } catch {
         setFrete(0);
@@ -540,26 +621,20 @@ const Checkout = () => {
 
     if (!pixAtivo && !isCard) calcularFreteEndereco();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    endereco.rua,
-    endereco.numero,
-    endereco.bairro,
-    endereco.cidade,
-    endereco.estado,
-    restaurante?._id,
-    pixAtivo,
-    isCard,
-  ]);
+  }, [endereco.rua, endereco.numero, endereco.bairro, endereco.cidade, endereco.estado, restaurante?._id, pixAtivo, isCard]);
 
-  // ========= ENDEREÇO =========
+  // Endereço seleção
   const handleEnderecoChange = (index) => {
     setEnderecoSelecionado(index);
     setEndereco(enderecosCliente[index]);
     setFrete(0);
 
-    // se trocar endereço, descongela
+    // se trocar endereço, limpa locks do cartão
     setFreteCongelado(null);
     setLatLngCongelado(null);
+    setCardAmountLocked(null);
+    setBrickFatalMsg("");
+    brickRetryRef.current = 0;
   };
 
   const adicionarEnderecoNovo = () => {
@@ -575,42 +650,94 @@ const Checkout = () => {
       complemento: "",
     });
     setFrete(0);
-
     setFreteCongelado(null);
     setLatLngCongelado(null);
+    setCardAmountLocked(null);
+    setBrickFatalMsg("");
+    brickRetryRef.current = 0;
   };
 
-  // ========= CONGELAR NO CARTÃO =========
-  useEffect(() => {
-    const freeze = async () => {
-      if (!isCard) return;
-      if (freteCongelado !== null && latLngCongelado) return;
-      if (!restaurante?._id) return;
-      if (!endereco.rua || !endereco.numero || !endereco.bairro || !endereco.cidade || !endereco.estado) return;
+  // ===== Payload base (Pix / Cartão) =====
+  const montarPayloadPedidoBase = async (paymentMethod = "Pix") => {
+    const carrinho = JSON.parse(localStorage.getItem("carrinho") || "[]");
 
-      try {
-        const [lng, lat] = await geocodificarEndereco();
-        const valorFrete = await calcularFrete(lng, lat);
+    if (!restaurante?._id) throw new Error("Restaurante não identificado. Volte para a vitrine.");
+    if (telLimpo.length < 10 || !nome?.trim() || !endereco.rua?.trim() || carrinho.length === 0) {
+      throw new Error("Preencha telefone, nome, endereço de entrega e tenha itens no carrinho.");
+    }
 
-        setFrete(valorFrete);
-        setFreteCongelado(valorFrete);
-        setLatLngCongelado({ lat, lng });
+    const valorProdutos = carrinho.reduce((acc, item) => acc + calcularValorItem(item), 0);
 
-        console.log("[MP] freeze frete:", valorFrete, "lat/lng:", lat, lng);
-      } catch (e) {
-        setFreteCongelado(Number(frete || 0));
-        setLatLngCongelado(null);
-        console.warn("[MP] freeze falhou, usando frete atual:", frete, e);
-      }
+    let lat, lng;
+    let valorFrete;
+
+    const isCardLocal = String(paymentMethod).toLowerCase() === "cartaocredito";
+
+    // Se cartão e já congelou, reaproveita
+    if (isCardLocal && freteCongelado !== null) {
+      valorFrete = Number(freteCongelado || 0);
+      lat = latLngCongelado?.lat;
+      lng = latLngCongelado?.lng;
+    } else {
+      const coords = await geocodificarEndereco();
+      lng = coords[0];
+      lat = coords[1];
+      valorFrete = await calcularFrete(lng, lat);
+    }
+
+    const valorTotalBase = valorProdutos + valorFrete;
+    setFrete(valorFrete);
+
+    const carrinhoFormatado = carrinho.map((item) => ({
+      ...item,
+      amount: Math.round((calcularValorItem(item) || 0) * 100),
+      description: item.nome,
+      quantity: item.quantidade,
+    }));
+
+    const freteItem = {
+      nome: "Entrega",
+      quantidade: 1,
+      precoUnitario: valorFrete,
+      precoTotal: valorFrete,
+      amount: Math.round(valorFrete * 100),
+      description: "Entrega",
+      quantity: 1,
     };
 
-    freeze();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isCard, restaurante?._id, endereco.rua, endereco.numero, endereco.bairro, endereco.cidade, endereco.estado]);
+    let carrinhoFinal = [...carrinhoFormatado, freteItem];
+    let valorTotalFinal = valorTotalBase;
 
-  // ========= PIX =========
+    if (isCardLocal) {
+      const taxa = round2(valorTotalBase * cardFeeRate);
+      const taxaPercent = round2(cardFeeRate * 100);
+
+      const taxaItem = {
+        nome: `Taxa cartão (${taxaPercent}%)`,
+        quantidade: 1,
+        precoUnitario: taxa,
+        precoTotal: taxa,
+        amount: Math.round(taxa * 100),
+        description: `Taxa cartão (${taxaPercent}%)`,
+        quantity: 1,
+      };
+
+      carrinhoFinal = [...carrinhoFinal, taxaItem];
+      valorTotalFinal = round2(valorTotalBase + taxa);
+    }
+
+    return {
+      carrinhoComFrete: carrinhoFinal,
+      valorTotal: valorTotalFinal,
+      valorFrete,
+      lat,
+      lng,
+    };
+  };
+
+  // ===== PIX =====
   const consultarStatusPix = async (pedidoId) => {
-    const { data } = await axios.get(`${API_URL}${PIX_STATUS_PATH}/${pedidoId}`);
+    const { data } = await axios.get(`${PIX_STATUS_URL}/${pedidoId}`);
     return data;
   };
 
@@ -670,7 +797,7 @@ const Checkout = () => {
   const cancelarPix = async () => {
     const id = resumoPedido?._id;
     try {
-      if (id) await axios.post(`${API_URL}/pedidos/${id}/cancelar`).catch(() => {});
+      if (id) await axios.post(`${API}/pedidos/${id}/cancelar`).catch(() => {});
     } catch {
       // ignore
     } finally {
@@ -689,127 +816,6 @@ const Checkout = () => {
     }
   };
 
-  const handleSnackbarClose = () => setSnackbar((prev) => ({ ...prev, open: false }));
-
-  // ✅ total base (subtotal + frete visual)
-  const totalPreviewCalculado = subtotalPreview + frete;
-
-  const cardFeeValue = useMemo(() => {
-    if (!isCard) return 0;
-    return round2(totalPreviewCalculado * cardFeeRate);
-  }, [isCard, totalPreviewCalculado, cardFeeRate]);
-
-  const totalComTaxaCartao = useMemo(() => {
-    if (!isCard) return totalPreviewCalculado;
-    return round2(totalPreviewCalculado + cardFeeValue);
-  }, [isCard, totalPreviewCalculado, cardFeeValue]);
-
-  // itens do resumo
-  const resumoItens = useMemo(() => {
-    const base = itensPreview || [];
-    return base.map((it, idx) => ({
-      key: `${it?.produtoId || it?._id || it?.nome || "item"}-${idx}`,
-      nome: it?.nome || "Item",
-      qtd: Number(it?.quantidade || 1),
-      total: calcularValorItem(it),
-    }));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [itensPreview]);
-
-  const maxResumo = 6;
-  const resumoMostrado = resumoOpen ? resumoItens : resumoItens.slice(0, maxResumo);
-  const temMaisResumo = resumoItens.length > maxResumo;
-
-  // ========= PAYLOAD BASE =========
-  const montarPayloadPedidoBase = async (paymentMethod = "Pix") => {
-    const carrinho = JSON.parse(localStorage.getItem("carrinho") || "[]");
-
-    if (!restaurante?._id) throw new Error("Restaurante não identificado. Volte para a vitrine.");
-    if (telLimpo.length < 10 || !nome?.trim() || !endereco.rua?.trim() || carrinho.length === 0) {
-      throw new Error("Preencha telefone, nome, endereço de entrega e tenha itens no carrinho.");
-    }
-
-    const valorProdutos = carrinho.reduce((acc, item) => acc + calcularValorItem(item), 0);
-
-    let lat, lng;
-    let valorFrete;
-
-    const isCardLocal = String(paymentMethod).toLowerCase() === "cartaocredito";
-
-    if (isCardLocal && freteCongelado !== null) {
-      valorFrete = Number(freteCongelado || 0);
-      lat = latLngCongelado?.lat;
-      lng = latLngCongelado?.lng;
-    } else {
-      const coords = await geocodificarEndereco();
-      lng = coords[0];
-      lat = coords[1];
-      valorFrete = await calcularFrete(lng, lat);
-    }
-
-    const valorTotalBase = valorProdutos + valorFrete;
-
-    // mantém UI coerente
-    setFrete(valorFrete);
-
-    const carrinhoFormatado = carrinho.map((item) => ({
-      ...item,
-      amount: Math.round((calcularValorItem(item) || 0) * 100),
-      description: item.nome,
-      quantity: item.quantidade,
-    }));
-
-    const freteItem = {
-      nome: "Entrega",
-      quantidade: 1,
-      precoUnitario: valorFrete,
-      precoTotal: valorFrete,
-      amount: Math.round(valorFrete * 100),
-      description: "Entrega",
-      quantity: 1,
-    };
-
-    let carrinhoFinal = [...carrinhoFormatado, freteItem];
-    let valorTotalFinal = valorTotalBase;
-
-    if (isCardLocal) {
-      const taxa = round2(valorTotalBase * cardFeeRate);
-      const taxaPercent = round2(cardFeeRate * 100);
-
-      const taxaItem = {
-        nome: `Taxa cartão (${taxaPercent}%)`,
-        quantidade: 1,
-        precoUnitario: taxa,
-        precoTotal: taxa,
-        amount: Math.round(taxa * 100),
-        description: `Taxa cartão (${taxaPercent}%)`,
-        quantity: 1,
-      };
-
-      carrinhoFinal = [...carrinhoFinal, taxaItem];
-      valorTotalFinal = round2(valorTotalBase + taxa);
-    }
-
-    console.log("[MP] payload-base", {
-      paymentMethod,
-      valorProdutos,
-      valorFrete,
-      valorTotalFinal,
-      uiTotal: totalComTaxaCartao,
-      uiFrete: frete,
-      congelado: isCardLocal ? { freteCongelado, latLngCongelado } : null,
-    });
-
-    return {
-      carrinhoComFrete: carrinhoFinal,
-      valorTotal: valorTotalFinal,
-      valorFrete,
-      lat,
-      lng,
-    };
-  };
-
-  // ========= FINALIZAR PIX =========
   const finalizarPix = async () => {
     if (!pixDisponivel) {
       toast("warning", "Pix indisponível: o restaurante não está conectado ao Mercado Pago.");
@@ -820,7 +826,7 @@ const Checkout = () => {
     try {
       const { carrinhoComFrete, valorTotal, valorFrete, lat, lng } = await montarPayloadPedidoBase("Pix");
 
-      const resp = await axios.post(`${API_URL}/pedidos/`, {
+      const resp = await axios.post(`${API}/pedidos/`, {
         itens: carrinhoComFrete,
         telefoneCliente: telLimpo,
         nomeCliente: nome,
@@ -854,9 +860,7 @@ const Checkout = () => {
         return;
       }
 
-      if (telLimpo && telLimpo.length >= 10) {
-        localStorage.setItem(LS_CLIENT_PHONE_KEY, telLimpo);
-      }
+      if (telLimpo && telLimpo.length >= 10) localStorage.setItem(LS_CLIENT_PHONE_KEY, telLimpo);
 
       if (!qrText && !qrBase64) {
         toast("error", "Pedido criado, mas não recebi o QR Code Pix.");
@@ -908,7 +912,72 @@ const Checkout = () => {
     }
   };
 
-  // ========= FINALIZAR CARTÃO =========
+  // ===== CARTÃO: prepara + trava amount =====
+  const prepararCartao = async () => {
+    if (!cartaoDisponivel) return;
+
+    setBrickFatalMsg("");
+    brickRetryRef.current = 0;
+
+    // valida campos mínimos antes de tentar subir brick (evita re-mount louco)
+    if (!restaurante?._id) {
+      toast("error", "Restaurante não identificado. Volte para a vitrine.");
+      setFormaPagamento("Pix");
+      return;
+    }
+    if (!endereco.rua || !endereco.numero || !endereco.bairro || !endereco.cidade || !endereco.estado) {
+      toast("warning", "Preencha o endereço antes de pagar no cartão.");
+      setFormaPagamento("Pix");
+      return;
+    }
+    const carrinho = JSON.parse(localStorage.getItem("carrinho") || "[]");
+    if (!carrinho.length) {
+      toast("warning", "Seu carrinho está vazio.");
+      setFormaPagamento("Pix");
+      return;
+    }
+
+    setCardPreparing(true);
+    try {
+      // Congela frete + total final (inclui taxa do cartão)
+      const { valorTotal, valorFrete, lat, lng } = await montarPayloadPedidoBase("CartaoCredito");
+
+      // guarda congelado
+      setFreteCongelado(Number(valorFrete || 0));
+      if (typeof lat === "number" && typeof lng === "number") setLatLngCongelado({ lat, lng });
+      else setLatLngCongelado(null);
+
+      const amount = Number(valorTotal || 0);
+      if (!Number.isFinite(amount) || amount <= 0) {
+        throw new Error("Valor inválido para cartão.");
+      }
+
+      setCardAmountLocked(amount);
+
+      // força mount “limpo” do Brick apenas depois do lock
+      setBrickAttempt((a) => a + 1);
+    } catch (e) {
+      console.error("prepararCartao error:", e);
+      toast("error", e?.message || "Não consegui preparar o pagamento no cartão.");
+      setFormaPagamento("Pix");
+      setCardAmountLocked(null);
+      setFreteCongelado(null);
+      setLatLngCongelado(null);
+    } finally {
+      setCardPreparing(false);
+    }
+  };
+
+  // Se alternar para Pix, limpa lock do cartão
+  useEffect(() => {
+    if (!isCard) {
+      setCardAmountLocked(null);
+      setBrickFatalMsg("");
+      brickRetryRef.current = 0;
+    }
+  }, [isCard]);
+
+  // ===== FINALIZAR CARTÃO =====
   const finalizarCartao = async ({ token, payment_method_id, issuer_id, installments, payer }) => {
     if (!cartaoDisponivel) {
       toast("warning", "Cartão indisponível para esta loja.");
@@ -917,19 +986,10 @@ const Checkout = () => {
 
     setCarregando(true);
     try {
-      const { carrinhoComFrete, valorTotal, valorFrete, lat, lng } = await montarPayloadPedidoBase("CartaoCredito");
+      const { carrinhoComFrete, valorTotal, valorFrete, lat, lng } =
+        await montarPayloadPedidoBase("CartaoCredito");
 
-      console.log("[MP] enviar cartao:", {
-        hasToken: !!token,
-        payment_method_id,
-        issuer_id,
-        installments,
-        payerEmail: payer?.email,
-        hasCpf: !!payer?.identification?.number,
-        valorTotal,
-      });
-
-      const resp = await axios.post(`${API_URL}/pedidos/`, {
+      const resp = await axios.post(`${API}/pedidos/`, {
         itens: carrinhoComFrete,
         telefoneCliente: telLimpo,
         nomeCliente: nome,
@@ -956,9 +1016,7 @@ const Checkout = () => {
         },
       });
 
-      if (telLimpo && telLimpo.length >= 10) {
-        localStorage.setItem(LS_CLIENT_PHONE_KEY, telLimpo);
-      }
+      if (telLimpo && telLimpo.length >= 10) localStorage.setItem(LS_CLIENT_PHONE_KEY, telLimpo);
 
       const status = String(resp.data?.statusPagamento || "").toLowerCase();
 
@@ -994,23 +1052,13 @@ const Checkout = () => {
     }
   };
 
-  // ========= SUBMIT BRICK =========
   const onSubmitCartao = async (formData) => {
     try {
-      console.log("[MP] formData (safe):", {
-        payment_method_id: formData?.payment_method_id,
-        issuer_id: formData?.issuer_id,
-        hasToken: !!formData?.token,
-        payerEmail: formData?.payer?.email,
-        hasCpf: !!formData?.payer?.identification?.number,
-      });
-
       const token = formData?.token;
       const payment_method_id = formData?.payment_method_id;
       const issuer_id = formData?.issuer_id;
 
       const installments = 1;
-
       const payerEmail = String(formData?.payer?.email || "").trim();
 
       if (!token || !payment_method_id) {
@@ -1037,7 +1085,49 @@ const Checkout = () => {
     }
   };
 
-  // ========= UI =========
+  // ===== Resumo =====
+  const resumoItens = useMemo(() => {
+    const base = itensPreview || [];
+    return base.map((it, idx) => ({
+      key: `${it?.produtoId || it?._id || it?.nome || "item"}-${idx}`,
+      nome: it?.nome || "Item",
+      qtd: Number(it?.quantidade || 1),
+      total: calcularValorItem(it),
+    }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [itensPreview]);
+
+  const maxResumo = 6;
+  const resumoMostrado = resumoOpen ? resumoItens : resumoItens.slice(0, maxResumo);
+  const temMaisResumo = resumoItens.length > maxResumo;
+
+  // total base (Pix)
+  const totalPreviewCalculado = subtotalPreview + frete;
+
+  const cardFeeValue = useMemo(() => {
+    if (!isCard) return 0;
+    return round2(totalPreviewCalculado * cardFeeRate);
+  }, [isCard, totalPreviewCalculado, cardFeeRate]);
+
+  const totalComTaxaCartao = useMemo(() => {
+    if (!isCard) return totalPreviewCalculado;
+    return round2(totalPreviewCalculado + cardFeeValue);
+  }, [isCard, totalPreviewCalculado, cardFeeValue]);
+
+  // ✅ regra final de render do brick
+  const podeRenderizarBrickCartao =
+    pagamentosCarregados &&
+    isCard &&
+    cartaoDisponivel &&
+    !!MP_PUBLIC_KEY &&
+    isHttpsOk &&
+    mpInited &&
+    !isInIframe &&
+    !cardPreparing &&
+    Number(cardAmountLocked || 0) > 0 &&
+    !brickFatalMsg;
+
+  // ===== UI =====
   return (
     <Box display="flex" flexDirection="column" minHeight="100vh" sx={{ backgroundColor: "#f5f5f7" }}>
       <Helmet>{restaurante ? <title>{restaurante.nome} - Checkout</title> : <title>Checkout</title>}</Helmet>
@@ -1058,6 +1148,11 @@ const Checkout = () => {
               <Typography variant="subtitle1" fontWeight="bold" noWrap>
                 {restaurante?.nome || "Restaurante"}
               </Typography>
+              {(restCarregando || mpCarregando) && (
+                <Typography variant="caption" color="rgba(255,255,255,0.9)">
+                  Atualizando meios de pagamento...
+                </Typography>
+              )}
             </Box>
           </Box>
 
@@ -1148,13 +1243,14 @@ const Checkout = () => {
             Endereço de Entrega
           </Typography>
 
+          {/* ✅ Se cartão estiver preparado e brick ativo, você pode travar campos para não ficar mudando amount */}
           <TextField
             label="Apelido"
             fullWidth
             margin="dense"
             value={endereco.apelido || ""}
             onChange={(e) => setEndereco({ ...endereco, apelido: e.target.value })}
-            disabled={travarFormulario}
+            disabled={travarFormulario || (isCard && cardAmountLocked != null)}
           />
 
           <TextField
@@ -1164,7 +1260,7 @@ const Checkout = () => {
             value={endereco.cep || ""}
             error={cepErro}
             helperText={cepHelper}
-            disabled={travarFormulario}
+            disabled={travarFormulario || (isCard && cardAmountLocked != null)}
             onChange={async (e) => {
               const cepMascarado = formatarCEP(e.target.value);
               const cepNumerico = cepMascarado.replace(/\D/g, "");
@@ -1172,8 +1268,12 @@ const Checkout = () => {
               setCepErro(false);
               setCepHelper("");
 
+              // se editar endereço, limpa lock do cartão (evita secure fields quebrando por remount)
               setFreteCongelado(null);
               setLatLngCongelado(null);
+              setCardAmountLocked(null);
+              setBrickFatalMsg("");
+              brickRetryRef.current = 0;
 
               if (cepNumerico.length === 8) {
                 const resultado = await buscarEnderecoPorCep(cepNumerico);
@@ -1187,74 +1287,26 @@ const Checkout = () => {
             }}
           />
 
-          <TextField
-            label="Rua"
-            fullWidth
-            margin="dense"
-            value={endereco.rua || ""}
-            onChange={(e) => {
-              setEndereco({ ...endereco, rua: e.target.value });
-              setFreteCongelado(null);
-              setLatLngCongelado(null);
-            }}
-            disabled={travarFormulario}
-          />
-          <TextField
-            label="Número"
-            fullWidth
-            margin="dense"
-            value={endereco.numero || ""}
-            onChange={(e) => {
-              setEndereco({ ...endereco, numero: e.target.value });
-              setFreteCongelado(null);
-              setLatLngCongelado(null);
-            }}
-            disabled={travarFormulario}
-          />
-          <TextField
-            label="Complemento"
-            fullWidth
-            margin="dense"
-            value={endereco.complemento || ""}
-            onChange={(e) => setEndereco({ ...endereco, complemento: e.target.value })}
-            disabled={travarFormulario}
-          />
-          <TextField
-            label="Bairro"
-            fullWidth
-            margin="dense"
-            value={endereco.bairro || ""}
-            onChange={(e) => {
-              setEndereco({ ...endereco, bairro: e.target.value });
-              setFreteCongelado(null);
-              setLatLngCongelado(null);
-            }}
-            disabled={travarFormulario}
-          />
-          <TextField
-            label="Cidade"
-            fullWidth
-            margin="dense"
-            value={endereco.cidade || ""}
-            onChange={(e) => {
-              setEndereco({ ...endereco, cidade: e.target.value });
-              setFreteCongelado(null);
-              setLatLngCongelado(null);
-            }}
-            disabled={travarFormulario}
-          />
-          <TextField
-            label="Estado"
-            fullWidth
-            margin="dense"
-            value={endereco.estado || ""}
-            onChange={(e) => {
-              setEndereco({ ...endereco, estado: e.target.value });
-              setFreteCongelado(null);
-              setLatLngCongelado(null);
-            }}
-            disabled={travarFormulario}
-          />
+          {["rua", "numero", "complemento", "bairro", "cidade", "estado"].map((campo) => (
+            <TextField
+              key={campo}
+              label={campo.charAt(0).toUpperCase() + campo.slice(1)}
+              fullWidth
+              margin="dense"
+              value={endereco[campo] || ""}
+              onChange={(e) => {
+                setEndereco({ ...endereco, [campo]: e.target.value });
+
+                // se editar endereço, limpa lock do cartão
+                setFreteCongelado(null);
+                setLatLngCongelado(null);
+                setCardAmountLocked(null);
+                setBrickFatalMsg("");
+                brickRetryRef.current = 0;
+              }}
+              disabled={travarFormulario || (isCard && cardAmountLocked != null)}
+            />
+          ))}
 
           <Typography variant="body2" color="success.main" sx={{ mt: 1, fontWeight: 600 }}>
             Frete estimado: R$ {money(frete)}
@@ -1355,7 +1407,7 @@ const Checkout = () => {
             </Paper>
           )}
 
-          {/* PAGAMENTO (só antes de gerar Pix) */}
+          {/* PAGAMENTO */}
           {!resumoPedido._id && (
             <Box mt={3}>
               <Grid container spacing={2} alignItems="flex-start" justifyContent="space-between">
@@ -1364,77 +1416,89 @@ const Checkout = () => {
                     Forma de Pagamento
                   </Typography>
 
-                  <RadioGroup
-                    value={formaPagamento}
-                    onChange={(e) => {
-                      const v = e.target.value;
+                  {!pagamentosCarregados ? (
+                    <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: 1, mt: 0.5 }}>
+                      <CircularProgress size={16} />
+                      <Typography variant="body2" color="text.secondary">
+                        Verificando pagamentos...
+                      </Typography>
+                    </Box>
+                  ) : (
+                    <RadioGroup
+                      value={formaPagamento}
+                      onChange={async (e) => {
+                        const v = e.target.value;
 
-                      // ✅ impede selecionar cartão se indisponível
-                      if (String(v).toLowerCase() === "cartaocredito" && !cartaoDisponivel) {
-                        toast("warning", "Cartão indisponível para esta loja.");
-                        return;
-                      }
+                        if (String(v).toLowerCase() === "cartaocredito") {
+                          if (!cartaoDisponivel) {
+                            toast("warning", "Cartão indisponível para esta loja.");
+                            return;
+                          }
+                          setFormaPagamento("CartaoCredito");
 
-                      // ✅ impede selecionar pix se indisponível
-                      if (String(v).toLowerCase() === "pix" && !pixDisponivel) {
-                        toast("warning", "Pix indisponível para esta loja.");
-                        return;
-                      }
-
-                      setFormaPagamento(v);
-
-                      // se trocar para Pix, descongela cartão
-                      if (String(v).toLowerCase() !== "cartaocredito") {
-                        setFreteCongelado(null);
-                        setLatLngCongelado(null);
-                      }
-                    }}
-                  >
-                    {mpCarregando ? (
-                      <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: 1, mt: 0.5 }}>
-                        <CircularProgress size={16} />
-                        <Typography variant="body2" color="text.secondary">
-                          Verificando pagamentos...
-                        </Typography>
-                      </Box>
-                    ) : pixDisponivel ? (
-                      <FormControlLabel
-                        value="Pix"
-                        control={<Radio />}
-                        label={
-                          <Box display="flex" alignItems="center" gap={1}>
-                            <PixIcon color={formaPagamento === "Pix" ? "primary" : "action"} />
-                            <Typography>Pix</Typography>
-                            <Chip label="Disponível" size="small" color="success" sx={{ fontWeight: 900 }} />
-                          </Box>
+                          // ✅ prepara e trava total antes de montar o brick
+                          await prepararCartao();
+                          return;
                         }
-                      />
-                    ) : (
-                      <Alert severity="warning" sx={{ mb: 1, borderRadius: 2 }}>
-                        Pix indisponível para esta loja.
-                      </Alert>
-                    )}
 
-                    {cartaoDisponivel ? (
-                      <FormControlLabel
-                        value="CartaoCredito"
-                        control={<Radio />}
-                        label={
-                          <Box display="flex" alignItems="center" gap={1}>
-                            <CreditCardIcon color={formaPagamento === "CartaoCredito" ? "primary" : "action"} />
-                            <Typography>
-                              Cartão de Crédito (à vista + {round2(cardFeeRate * 100)}%)
-                            </Typography>
-                            <Chip label="Disponível" size="small" color="success" sx={{ fontWeight: 900 }} />
-                          </Box>
+                        if (String(v).toLowerCase() === "pix") {
+                          if (!pixDisponivel) {
+                            toast("warning", "Pix indisponível para esta loja.");
+                            return;
+                          }
+                          setFormaPagamento("Pix");
+
+                          // limpa locks do cartão
+                          setFreteCongelado(null);
+                          setLatLngCongelado(null);
+                          setCardAmountLocked(null);
+                          setBrickFatalMsg("");
+                          brickRetryRef.current = 0;
+                          return;
                         }
-                      />
-                    ) : (
-                      <Alert severity="info" sx={{ mb: 1, borderRadius: 2 }}>
-                        Pagamento com cartão indisponível para esta loja.
-                      </Alert>
-                    )}
-                  </RadioGroup>
+
+                        setFormaPagamento(v);
+                      }}
+                    >
+                      {pixDisponivel ? (
+                        <FormControlLabel
+                          value="Pix"
+                          control={<Radio />}
+                          label={
+                            <Box display="flex" alignItems="center" gap={1}>
+                              <PixIcon color={formaPagamento === "Pix" ? "primary" : "action"} />
+                              <Typography>Pix</Typography>
+                              <Chip label="Disponível" size="small" color="success" sx={{ fontWeight: 900 }} />
+                            </Box>
+                          }
+                        />
+                      ) : (
+                        <Alert severity="warning" sx={{ mb: 1, borderRadius: 2 }}>
+                          Pix indisponível para esta loja.
+                        </Alert>
+                      )}
+
+                      {cartaoDisponivel ? (
+                        <FormControlLabel
+                          value="CartaoCredito"
+                          control={<Radio />}
+                          label={
+                            <Box display="flex" alignItems="center" gap={1}>
+                              <CreditCardIcon color={formaPagamento === "CartaoCredito" ? "primary" : "action"} />
+                              <Typography>
+                                Cartão de Crédito (à vista + {round2(cardFeeRate * 100)}%)
+                              </Typography>
+                              <Chip label="Disponível" size="small" color="success" sx={{ fontWeight: 900 }} />
+                            </Box>
+                          }
+                        />
+                      ) : (
+                        <Alert severity="info" sx={{ mb: 1, borderRadius: 2 }}>
+                          Pagamento com cartão indisponível para esta loja.
+                        </Alert>
+                      )}
+                    </RadioGroup>
+                  )}
                 </Grid>
 
                 <Grid item xs={12} md={6}>
@@ -1447,7 +1511,7 @@ const Checkout = () => {
                       <Button
                         variant="contained"
                         onClick={finalizarPix}
-                        disabled={carregando || mpCarregando || !pixDisponivel}
+                        disabled={carregando || !pagamentosCarregados || !pixDisponivel}
                         sx={{
                           textTransform: "none",
                           fontWeight: 900,
@@ -1483,25 +1547,67 @@ const Checkout = () => {
               {/* BRICK DO CARTÃO */}
               {isCard && (
                 <Box mt={2}>
-                  {!MP_PUBLIC_KEY ? (
+                  {!pagamentosCarregados ? (
+                    <Alert severity="info" sx={{ borderRadius: 2 }}>
+                      Carregando meios de pagamento...
+                    </Alert>
+                  ) : !cartaoDisponivel ? (
+                    <Alert severity="warning" sx={{ borderRadius: 2 }}>
+                      Cartão indisponível:{" "}
+                      {mpConectado ? "a loja desativou cartão na vitrine." : "a loja não está conectada ao Mercado Pago."}
+                    </Alert>
+                  ) : !MP_PUBLIC_KEY ? (
                     <Alert severity="error" sx={{ borderRadius: 2 }}>
                       Falta configurar <b>VITE_MP_PUBLIC_KEY</b> no front (.env).
                     </Alert>
                   ) : !isHttpsOk ? (
                     <Alert severity="error" sx={{ borderRadius: 2 }}>
-                      O formulário de cartão do Mercado Pago exige <b>HTTPS</b> (ou <b>localhost</b>). <br />
-                      Publique seu front em HTTPS ou teste em localhost.
+                      O formulário de cartão do Mercado Pago exige <b>HTTPS</b> (ou <b>localhost</b>).
+                    </Alert>
+                  ) : isInIframe ? (
+                    <Alert severity="warning" sx={{ borderRadius: 2 }}>
+                      O formulário de cartão pode falhar dentro de <b>iframe/webview</b>. Abra o checkout no navegador
+                      (Chrome/Safari) fora do app.
                     </Alert>
                   ) : !mpInited ? (
-                    <Alert severity="warning" sx={{ borderRadius: 2 }}>
-                      Inicializando Mercado Pago...
+                    <Alert severity="info" sx={{ borderRadius: 2 }}>
+                      Preparando SDK do Mercado Pago...
                     </Alert>
-                  ) : !cartaoDisponivel && !mpCarregando ? (
-                    <Alert severity="warning" sx={{ borderRadius: 2 }}>
-                      Cartão indisponível:{" "}
-                      {mpConectado ? "a loja desativou cartão na vitrine." : "a loja não está conectada ao Mercado Pago."}
+                  ) : cardPreparing ? (
+                    <Alert severity="info" sx={{ borderRadius: 2 }}>
+                      Calculando frete/taxa e preparando cartão...
+                      <Box sx={{ mt: 1 }}>
+                        <CircularProgress size={18} />
+                      </Box>
                     </Alert>
-                  ) : (
+                  ) : brickFatalMsg ? (
+                    <Alert severity="error" sx={{ borderRadius: 2 }}>
+                      {brickFatalMsg}
+                      <Box sx={{ mt: 1, display: "flex", gap: 1, flexWrap: "wrap" }}>
+                        <Button
+                          variant="outlined"
+                          onClick={() => {
+                            setBrickFatalMsg("");
+                            brickRetryRef.current = 0;
+                            setBrickAttempt((a) => a + 1);
+                          }}
+                          sx={{ textTransform: "none" }}
+                        >
+                          Tentar novamente
+                        </Button>
+                        <Button
+                          variant="outlined"
+                          onClick={() => {
+                            setFormaPagamento("Pix");
+                            setCardAmountLocked(null);
+                          }}
+                          sx={{ textTransform: "none" }}
+                        >
+                          Voltar para Pix
+                        </Button>
+                      </Box>
+                    </Alert>
+                  ) : podeRenderizarBrickCartao ? (
                     <Paper
                       variant="outlined"
                       sx={{
@@ -1516,8 +1622,9 @@ const Checkout = () => {
                       </Typography>
 
                       <CardPayment
+                        key={`mp-card-${restaurante?._id || "x"}-${brickAttempt}-${Number(cardAmountLocked || 0)}`}
                         initialization={{
-                          amount: Number(totalComTaxaCartao || 0),
+                          amount: Number(cardAmountLocked || 0),
                         }}
                         customization={{
                           paymentMethods: {
@@ -1531,7 +1638,28 @@ const Checkout = () => {
                           await onSubmitCartao({ ...formData, installments: 1 });
                         }}
                         onError={(err) => {
+                          // err pode vir sem message => NÃO acessa err.message direto
+                          const cause = err?.cause || err?.error?.cause || err?.data?.cause;
+
                           console.error("MP CardPayment error:", err);
+
+                          // retry automático 1x (muito comum resolver quando foi montagem instável)
+                          if (cause === "fields_setup_failed_after_3_tries" || cause === "fields_setup_failed") {
+                            if (brickRetryRef.current < 1) {
+                              brickRetryRef.current += 1;
+                              toast("info", "Recarregando formulário do cartão...");
+                              setTimeout(() => setBrickAttempt((a) => a + 1), 700);
+                              return;
+                            }
+
+                            // mensagem “fatal” com dicas práticas
+                            setBrickFatalMsg(
+                              "Não consegui carregar o formulário do cartão (Secure Fields). " +
+                                "Verifique: bloqueadores/adblock, CSP (frame-src/script-src), e tente fora de iframe/webview."
+                            );
+                            return;
+                          }
+
                           toast("error", "Erro ao carregar formulário do cartão.");
                         }}
                       />
@@ -1545,7 +1673,15 @@ const Checkout = () => {
                           Frete congelado no cartão: <b>R$ {money(freteCongelado)}</b>
                         </Alert>
                       )}
+
+                      <Alert severity="warning" sx={{ mt: 1, borderRadius: 2 }}>
+                        Para alterar endereço/itens, volte para <b>Pix</b> e depois selecione cartão novamente.
+                      </Alert>
                     </Paper>
+                  ) : (
+                    <Alert severity="info" sx={{ borderRadius: 2 }}>
+                      Preparando formulário do cartão...
+                    </Alert>
                   )}
                 </Box>
               )}
@@ -1554,7 +1690,8 @@ const Checkout = () => {
         </Paper>
       </Container>
 
-      {/* CONFIRMAR: EDITAR DADOS / NOVO PIX */}
+    
+
       <Dialog open={confirmEditarPix} onClose={() => setConfirmEditarPix(false)}>
         <DialogTitle>Editar dados?</DialogTitle>
         <DialogContent>
