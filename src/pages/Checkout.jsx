@@ -38,9 +38,6 @@ import RadioGroup from "@mui/material/RadioGroup";
 import FormControlLabel from "@mui/material/FormControlLabel";
 import CreditCardIcon from "@mui/icons-material/CreditCard";
 import PixIcon from "@mui/icons-material/Pix";
-import CheckCircleIcon from "@mui/icons-material/CheckCircle";
-import HourglassBottomIcon from "@mui/icons-material/HourglassBottom";
-import ErrorOutlineIcon from "@mui/icons-material/ErrorOutline";
 import ReceiptLongIcon from "@mui/icons-material/ReceiptLong";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import ExpandLessIcon from "@mui/icons-material/ExpandLess";
@@ -62,16 +59,15 @@ const MP_STATUS_PUBLICO_PATH = "/mercadopago/status";
 
 const PIX_TTL_MS = 15 * 60 * 1000;
 
-// ✅ taxa cartão (3,8%)
-const CARD_FEE_RATE = 0.038;
+// ✅ taxa cartão (default 3,8% — pode vir do restaurante)
+const DEFAULT_CARD_FEE_RATE = 0.038;
+
 const round2 = (v) => Math.round((Number(v || 0) + Number.EPSILON) * 100) / 100;
 
 const money = (v) => {
   const num = Number(v || 0);
   return num.toFixed(2);
 };
-
-const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 
 // ✅ validação simples de email
 const isValidEmail = (email) => {
@@ -178,6 +174,19 @@ const Checkout = () => {
   const restauranteRaw = JSON.parse(localStorage.getItem("restauranteSelecionado") || "null");
   const restaurante = restauranteRaw?.restaurante ?? restauranteRaw;
 
+  // ✅ flag público do restaurante: habilita/desabilita cartão na vitrine
+  const cartaoAtivoNaVitrine = useMemo(() => {
+    // lojas antigas: se não vier o campo, assume true para não quebrar
+    return restaurante?.pagamentoCartaoAtivo !== false;
+  }, [restaurante]);
+
+  // ✅ taxa vinda do backend (ex: 3.8). fallback 3.8%
+  const cardFeeRate = useMemo(() => {
+    const p = Number(restaurante?.taxaCartaoCreditoAvistaPercent);
+    if (Number.isFinite(p) && p > 0) return p / 100;
+    return DEFAULT_CARD_FEE_RATE;
+  }, [restaurante]);
+
   const pollRef = useRef(null);
   const countdownRef = useRef(null);
 
@@ -271,6 +280,10 @@ const Checkout = () => {
   const isPix = (formaPagamento || "").toLowerCase() === "pix";
   const isCard = (formaPagamento || "").toLowerCase() === "cartaocredito";
 
+  // ✅ Disponibilidade real por regras
+  const pixDisponivel = !!mpConectado; // no seu fluxo, Pix só funciona com MP conectado
+  const cartaoDisponivel = !!mpConectado && cartaoAtivoNaVitrine;
+
   const pixTemPedido = Boolean(resumoPedido?._id) && isPix && Boolean(qrCodeTexto || qrCodeUrl);
   const pixExpirado = useMemo(() => {
     if (!pixTemPedido) return false;
@@ -290,7 +303,8 @@ const Checkout = () => {
     console.log("[MP] MP_PUBLIC_KEY prefix:", (MP_PUBLIC_KEY || "").slice(0, 12));
     console.log("[MP] isHttpsOk:", isHttpsOk);
     console.log("[MP] mpConectado:", mpConectado);
-  }, [mpConectado, isHttpsOk]);
+    console.log("[PAY] cartaoAtivoNaVitrine:", cartaoAtivoNaVitrine);
+  }, [mpConectado, isHttpsOk, cartaoAtivoNaVitrine]);
 
   // ========= CARRINHO + RESTAURA PIX PENDENTE =========
   useEffect(() => {
@@ -391,11 +405,22 @@ const Checkout = () => {
     fetchMpStatus();
   }, [restaurante?._id]);
 
+  // ✅ garante consistência da forma de pagamento com as regras (pix/cartão)
   useEffect(() => {
-    if (!mpCarregando && !mpConectado && formaPagamento === "Pix") {
-      setFormaPagamento("CartaoCredito");
+    if (mpCarregando) return;
+
+    // se está em cartão mas cartão indisponível -> cai pra Pix (se disponível)
+    if (isCard && !cartaoDisponivel) {
+      if (pixDisponivel) setFormaPagamento("Pix");
+      else toast("warning", "Pagamento com cartão indisponível para esta loja.");
     }
-  }, [mpCarregando, mpConectado, formaPagamento]);
+
+    // se está em Pix mas Pix indisponível -> cai pro cartão (se disponível)
+    if (isPix && !pixDisponivel) {
+      if (cartaoDisponivel) setFormaPagamento("CartaoCredito");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mpCarregando, mpConectado, cartaoAtivoNaVitrine]);
 
   // ========= BUSCAR CLIENTE =========
   const buscarCliente = async () => {
@@ -508,8 +533,6 @@ const Checkout = () => {
         const valorFrete = await calcularFrete(lng, lat);
 
         setFrete(valorFrete);
-
-        // se estiver no cartão e ainda não congelou, não mexe aqui
       } catch {
         setFrete(0);
       }
@@ -560,12 +583,8 @@ const Checkout = () => {
   // ========= CONGELAR NO CARTÃO =========
   useEffect(() => {
     const freeze = async () => {
-      // congela 1x ao entrar no cartão, se já tem dados mínimos
       if (!isCard) return;
-
-      // já congelado
       if (freteCongelado !== null && latLngCongelado) return;
-
       if (!restaurante?._id) return;
       if (!endereco.rua || !endereco.numero || !endereco.bairro || !endereco.cidade || !endereco.estado) return;
 
@@ -579,7 +598,6 @@ const Checkout = () => {
 
         console.log("[MP] freeze frete:", valorFrete, "lat/lng:", lat, lng);
       } catch (e) {
-        // se falhar, congela no valor atual (mesmo assim evita divergência)
         setFreteCongelado(Number(frete || 0));
         setLatLngCongelado(null);
         console.warn("[MP] freeze falhou, usando frete atual:", frete, e);
@@ -678,8 +696,8 @@ const Checkout = () => {
 
   const cardFeeValue = useMemo(() => {
     if (!isCard) return 0;
-    return round2(totalPreviewCalculado * CARD_FEE_RATE);
-  }, [isCard, totalPreviewCalculado]);
+    return round2(totalPreviewCalculado * cardFeeRate);
+  }, [isCard, totalPreviewCalculado, cardFeeRate]);
 
   const totalComTaxaCartao = useMemo(() => {
     if (!isCard) return totalPreviewCalculado;
@@ -703,7 +721,6 @@ const Checkout = () => {
   const temMaisResumo = resumoItens.length > maxResumo;
 
   // ========= PAYLOAD BASE =========
-  // ✅ Ajuste: no Cartão usa frete/latlng congelados se existirem
   const montarPayloadPedidoBase = async (paymentMethod = "Pix") => {
     const carrinho = JSON.parse(localStorage.getItem("carrinho") || "[]");
 
@@ -756,21 +773,23 @@ const Checkout = () => {
     let valorTotalFinal = valorTotalBase;
 
     if (isCardLocal) {
-      const taxa = round2(valorTotalBase * CARD_FEE_RATE);
+      const taxa = round2(valorTotalBase * cardFeeRate);
+      const taxaPercent = round2(cardFeeRate * 100);
+
       const taxaItem = {
-        nome: "Taxa cartão (3,8%)",
+        nome: `Taxa cartão (${taxaPercent}%)`,
         quantidade: 1,
         precoUnitario: taxa,
         precoTotal: taxa,
         amount: Math.round(taxa * 100),
-        description: "Taxa cartão (3,8%)",
+        description: `Taxa cartão (${taxaPercent}%)`,
         quantity: 1,
       };
+
       carrinhoFinal = [...carrinhoFinal, taxaItem];
       valorTotalFinal = round2(valorTotalBase + taxa);
     }
 
-    // ✅ DEBUG para descobrir divergência em prod
     console.log("[MP] payload-base", {
       paymentMethod,
       valorProdutos,
@@ -792,7 +811,7 @@ const Checkout = () => {
 
   // ========= FINALIZAR PIX =========
   const finalizarPix = async () => {
-    if (!mpConectado) {
+    if (!pixDisponivel) {
       toast("warning", "Pix indisponível: o restaurante não está conectado ao Mercado Pago.");
       return;
     }
@@ -891,6 +910,11 @@ const Checkout = () => {
 
   // ========= FINALIZAR CARTÃO =========
   const finalizarCartao = async ({ token, payment_method_id, issuer_id, installments, payer }) => {
+    if (!cartaoDisponivel) {
+      toast("warning", "Cartão indisponível para esta loja.");
+      return;
+    }
+
     setCarregando(true);
     try {
       const { carrinhoComFrete, valorTotal, valorFrete, lat, lng } = await montarPayloadPedidoBase("CartaoCredito");
@@ -955,7 +979,6 @@ const Checkout = () => {
     } catch (err) {
       console.error("Erro cartão:", err?.response?.data || err);
 
-      // ✅ mostra detalhe do backend (ajuda a descobrir o real erro em prod)
       const data = err?.response?.data;
       const msg =
         data?.message ||
@@ -1000,7 +1023,6 @@ const Checkout = () => {
         return;
       }
 
-      // ✅ sincroniza SEMPRE com o email do Brick (evita divergência)
       setEmail(payerEmail);
 
       const payer = {
@@ -1150,7 +1172,6 @@ const Checkout = () => {
               setCepErro(false);
               setCepHelper("");
 
-              // mudar CEP -> descongela (cartão)
               setFreteCongelado(null);
               setLatLngCongelado(null);
 
@@ -1314,7 +1335,7 @@ const Checkout = () => {
                 {isCard && (
                   <Stack direction="row" justifyContent="space-between">
                     <Typography variant="body2" color="text.secondary">
-                      Taxa cartão (3,8%)
+                      Taxa cartão ({round2(cardFeeRate * 100)}%)
                     </Typography>
                     <Typography variant="body2" fontWeight={800}>
                       R$ {money(cardFeeValue)}
@@ -1347,6 +1368,19 @@ const Checkout = () => {
                     value={formaPagamento}
                     onChange={(e) => {
                       const v = e.target.value;
+
+                      // ✅ impede selecionar cartão se indisponível
+                      if (String(v).toLowerCase() === "cartaocredito" && !cartaoDisponivel) {
+                        toast("warning", "Cartão indisponível para esta loja.");
+                        return;
+                      }
+
+                      // ✅ impede selecionar pix se indisponível
+                      if (String(v).toLowerCase() === "pix" && !pixDisponivel) {
+                        toast("warning", "Pix indisponível para esta loja.");
+                        return;
+                      }
+
                       setFormaPagamento(v);
 
                       // se trocar para Pix, descongela cartão
@@ -1360,10 +1394,10 @@ const Checkout = () => {
                       <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: 1, mt: 0.5 }}>
                         <CircularProgress size={16} />
                         <Typography variant="body2" color="text.secondary">
-                          Verificando Pix...
+                          Verificando pagamentos...
                         </Typography>
                       </Box>
-                    ) : mpConectado ? (
+                    ) : pixDisponivel ? (
                       <FormControlLabel
                         value="Pix"
                         control={<Radio />}
@@ -1381,16 +1415,25 @@ const Checkout = () => {
                       </Alert>
                     )}
 
-                    <FormControlLabel
-                      value="CartaoCredito"
-                      control={<Radio />}
-                      label={
-                        <Box display="flex" alignItems="center" gap={1}>
-                          <CreditCardIcon color={formaPagamento === "CartaoCredito" ? "primary" : "action"} />
-                          <Typography>Cartão de Crédito (à vista + 3,8%)</Typography>
-                        </Box>
-                      }
-                    />
+                    {cartaoDisponivel ? (
+                      <FormControlLabel
+                        value="CartaoCredito"
+                        control={<Radio />}
+                        label={
+                          <Box display="flex" alignItems="center" gap={1}>
+                            <CreditCardIcon color={formaPagamento === "CartaoCredito" ? "primary" : "action"} />
+                            <Typography>
+                              Cartão de Crédito (à vista + {round2(cardFeeRate * 100)}%)
+                            </Typography>
+                            <Chip label="Disponível" size="small" color="success" sx={{ fontWeight: 900 }} />
+                          </Box>
+                        }
+                      />
+                    ) : (
+                      <Alert severity="info" sx={{ mb: 1, borderRadius: 2 }}>
+                        Pagamento com cartão indisponível para esta loja.
+                      </Alert>
+                    )}
                   </RadioGroup>
                 </Grid>
 
@@ -1404,7 +1447,7 @@ const Checkout = () => {
                       <Button
                         variant="contained"
                         onClick={finalizarPix}
-                        disabled={carregando || mpCarregando || !mpConectado}
+                        disabled={carregando || mpCarregando || !pixDisponivel}
                         sx={{
                           textTransform: "none",
                           fontWeight: 900,
@@ -1453,9 +1496,10 @@ const Checkout = () => {
                     <Alert severity="warning" sx={{ borderRadius: 2 }}>
                       Inicializando Mercado Pago...
                     </Alert>
-                  ) : !mpConectado && !mpCarregando ? (
+                  ) : !cartaoDisponivel && !mpCarregando ? (
                     <Alert severity="warning" sx={{ borderRadius: 2 }}>
-                      Cartão indisponível: o restaurante não está conectado ao Mercado Pago.
+                      Cartão indisponível:{" "}
+                      {mpConectado ? "a loja desativou cartão na vitrine." : "a loja não está conectada ao Mercado Pago."}
                     </Alert>
                   ) : (
                     <Paper
@@ -1471,8 +1515,6 @@ const Checkout = () => {
                         Pagamento com cartão (à vista)
                       </Typography>
 
-                      {/* ✅ Ajuste: removido CSS que escondia "installments" (pode quebrar Brick) */}
-                      {/* ✅ Ajuste: removida key baseada no total (não recria Brick no meio do preenchimento) */}
                       <CardPayment
                         initialization={{
                           amount: Number(totalComTaxaCartao || 0),
