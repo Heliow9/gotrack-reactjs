@@ -45,13 +45,6 @@ import ExpandLessIcon from "@mui/icons-material/ExpandLess";
 // ✅ Mercado Pago Brick
 import { initMercadoPago, CardPayment } from "@mercadopago/sdk-react";
 
-/**
- * ✅ DICA (CSP):
- * Secure Fields usa IFRAME. Se você tiver CSP, libere frame-src/script-src para MP.
- * Caso contrário, dá "Secure Fields failed".
- * (O MP documenta que Secure Fields são campos via iframe). :contentReference[oaicite:4]{index=4}
- */
-
 // ====== API base robusta ======
 const RAW_API = (import.meta.env.VITE_API_URL || "https://api.movyo.delivery").replace(/\/$/, "");
 const API = RAW_API.endsWith("/api") ? RAW_API : `${RAW_API}/api`;
@@ -83,6 +76,13 @@ const isValidEmail = (email) => {
   return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(e);
 };
 
+function msToMMSS(ms) {
+  const s = Math.max(0, Math.floor(Number(ms || 0) / 1000));
+  const mm = String(Math.floor(s / 60)).padStart(2, "0");
+  const ss = String(s % 60).padStart(2, "0");
+  return `${mm}:${ss}`;
+}
+
 /**
  * ✅ INIT MERCADO PAGO 1 VEZ (por public key)
  */
@@ -90,7 +90,6 @@ function initMpOnce() {
   if (typeof window === "undefined") return false;
   if (!MP_PUBLIC_KEY) return false;
 
-  // se já iniciou com essa pk, ok
   if (window.__MP_INITED__ && window.__MP_PK__ === MP_PUBLIC_KEY) return true;
 
   try {
@@ -149,7 +148,7 @@ const Checkout = () => {
   const [pixTimeLeftMs, setPixTimeLeftMs] = useState(0);
   const [confirmCancelarPix, setConfirmCancelarPix] = useState(false);
 
-  // Pedido
+  // Pedido (Pix)
   const [resumoPedido, setResumoPedido] = useState({
     itens: [],
     total: 0,
@@ -242,7 +241,7 @@ const Checkout = () => {
   // “pagamentos carregados”
   const pagamentosCarregados = !mpCarregando && restConfirmado;
 
-  const pixTemPedido = Boolean(resumoPedido?._id) && isPix && Boolean(qrCodeTexto || qrCodeUrl);
+  const pixTemPedido = Boolean(resumoPedido?._id) && Boolean(qrCodeTexto || qrCodeUrl);
   const pixExpirado = useMemo(() => {
     if (!pixTemPedido) return false;
     if (!pixExpiresAt) return false;
@@ -254,6 +253,25 @@ const Checkout = () => {
 
   const pixAtivo = pixTemPedido && !pixExpirado;
   const travarFormulario = pixAtivo || carregando;
+
+  const qrImgSrc = useMemo(() => {
+    const s = String(qrCodeUrl || "").trim();
+    if (!s) return "";
+    if (s.startsWith("data:image")) return s;
+    if (s.startsWith("http://") || s.startsWith("https://")) return s;
+    // backend pode mandar base64 puro
+    return `data:image/png;base64,${s}`;
+  }, [qrCodeUrl]);
+
+  const pixStatusNorm = useMemo(() => String(pixStatus || "").toLowerCase(), [pixStatus]);
+  const pixStatusChip = useMemo(() => {
+    const s = pixStatusNorm;
+    if (s === "approved" || s === "paid" || s === "pago") return { label: "Aprovado", color: "success" };
+    if (s === "in_process" || s === "pending" || s === "authorized") return { label: "Aguardando", color: "warning" };
+    if (s === "expired" || pixExpirado) return { label: "Expirado", color: "default" };
+    if (s) return { label: s, color: "default" };
+    return { label: "Aguardando", color: "warning" };
+  }, [pixStatusNorm, pixExpirado]);
 
   const handleSnackbarClose = () => setSnackbar((prev) => ({ ...prev, open: false }));
 
@@ -353,9 +371,7 @@ const Checkout = () => {
           try {
             const raw = JSON.parse(localStorage.getItem("restauranteSelecionado") || "null");
             if (raw) {
-              const merged = raw?.restaurante
-                ? { ...raw, restaurante: { ...raw.restaurante, ...r } }
-                : { ...raw, ...r };
+              const merged = raw?.restaurante ? { ...raw, restaurante: { ...raw.restaurante, ...r } } : { ...raw, ...r };
               localStorage.setItem("restauranteSelecionado", JSON.stringify(merged));
             }
           } catch {}
@@ -440,6 +456,7 @@ const Checkout = () => {
 
     try {
       const pend = JSON.parse(localStorage.getItem("pix_pendente") || "null");
+
       if (pend?.telefone) {
         const pTel = String(pend.telefone).replace(/\D/g, "");
         if (pTel) localStorage.setItem(LS_CLIENT_PHONE_KEY, pTel);
@@ -452,6 +469,7 @@ const Checkout = () => {
           _id: pend._id,
           total: pend.total || 0,
           frete: pend.frete || 0,
+          itens: pend.itens || prev.itens || [],
         }));
 
         setQrCodeTexto(pend.qrCodeTexto || "");
@@ -589,10 +607,7 @@ const Checkout = () => {
         Array.isArray(faixasRaio) &&
         faixasRaio.length > 0
       ) {
-        const pontoRestaurante = turf.point([
-          localizacaoRestaurante.longitude,
-          localizacaoRestaurante.latitude,
-        ]);
+        const pontoRestaurante = turf.point([localizacaoRestaurante.longitude, localizacaoRestaurante.latitude]);
         const distanciaKm = turf.distance(pontoRestaurante, pontoCliente);
         const faixa = faixasRaio.find((f) => distanciaKm <= f.ate);
         return faixa ? faixa.valor || 0 : 0;
@@ -621,7 +636,16 @@ const Checkout = () => {
 
     if (!pixAtivo && !isCard) calcularFreteEndereco();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [endereco.rua, endereco.numero, endereco.bairro, endereco.cidade, endereco.estado, restaurante?._id, pixAtivo, isCard]);
+  }, [
+    endereco.rua,
+    endereco.numero,
+    endereco.bairro,
+    endereco.cidade,
+    endereco.estado,
+    restaurante?._id,
+    pixAtivo,
+    isCard,
+  ]);
 
   // Endereço seleção
   const handleEnderecoChange = (index) => {
@@ -755,6 +779,7 @@ const Checkout = () => {
 
         setVerificandoPix(true);
         const st = await consultarStatusPix(pedidoId);
+
         const status = st?.status || st?.payment_status || st?.statusPagamento || null;
         if (status) setPixStatus(status);
 
@@ -781,7 +806,7 @@ const Checkout = () => {
     limparCountdownPix();
     localStorage.removeItem("pix_pendente");
 
-    setResumoPedido((prev) => ({ ...prev, itens: [], total: 0, frete: 0, _id: null }));
+    setResumoPedido({ itens: [], total: 0, frete: 0, _id: null });
     setQrCodeTexto("");
     setQrCodeUrl("");
     setPixStatus(null);
@@ -791,6 +816,7 @@ const Checkout = () => {
     setPixExpiresAt(null);
     setPixTimeLeftMs(0);
 
+    setPixCodeOpen(false);
     toast("info", "Você pode editar os dados e gerar um novo Pix.");
   };
 
@@ -813,6 +839,21 @@ const Checkout = () => {
       setCopiado(true);
     } catch {
       toast("error", "Não consegui copiar o código Pix.");
+    }
+  };
+
+  const verificarPixAgora = async () => {
+    const id = resumoPedido?._id;
+    if (!id) return;
+    try {
+      setVerificandoPix(true);
+      const st = await consultarStatusPix(id);
+      const status = st?.status || st?.payment_status || st?.statusPagamento || null;
+      if (status) setPixStatus(status);
+    } catch {
+      // ignore
+    } finally {
+      setVerificandoPix(false);
     }
   };
 
@@ -892,6 +933,7 @@ const Checkout = () => {
           telefone: telLimpo,
           total: valorTotal,
           frete: valorFrete,
+          itens: carrinhoComFrete,
           qrCodeTexto: qrText,
           qrCodeUrl: qrBase64,
           pixStatus: "pending",
@@ -902,7 +944,7 @@ const Checkout = () => {
 
       setResumoOpen(true);
       setPixCodeOpen(true);
-      toast("info", "Pix gerado! Faça o pagamento no app do banco.");
+      toast("info", "Pix gerado! Aguardando confirmação do pagamento...");
       iniciarPollingPix(pedidoId, expiresAt);
     } catch (err) {
       console.error("Erro backend:", err?.response?.data || err);
@@ -919,7 +961,6 @@ const Checkout = () => {
     setBrickFatalMsg("");
     brickRetryRef.current = 0;
 
-    // valida campos mínimos antes de tentar subir brick (evita re-mount louco)
     if (!restaurante?._id) {
       toast("error", "Restaurante não identificado. Volte para a vitrine.");
       setFormaPagamento("Pix");
@@ -939,22 +980,16 @@ const Checkout = () => {
 
     setCardPreparing(true);
     try {
-      // Congela frete + total final (inclui taxa do cartão)
       const { valorTotal, valorFrete, lat, lng } = await montarPayloadPedidoBase("CartaoCredito");
 
-      // guarda congelado
       setFreteCongelado(Number(valorFrete || 0));
       if (typeof lat === "number" && typeof lng === "number") setLatLngCongelado({ lat, lng });
       else setLatLngCongelado(null);
 
       const amount = Number(valorTotal || 0);
-      if (!Number.isFinite(amount) || amount <= 0) {
-        throw new Error("Valor inválido para cartão.");
-      }
+      if (!Number.isFinite(amount) || amount <= 0) throw new Error("Valor inválido para cartão.");
 
       setCardAmountLocked(amount);
-
-      // força mount “limpo” do Brick apenas depois do lock
       setBrickAttempt((a) => a + 1);
     } catch (e) {
       console.error("prepararCartao error:", e);
@@ -986,8 +1021,7 @@ const Checkout = () => {
 
     setCarregando(true);
     try {
-      const { carrinhoComFrete, valorTotal, valorFrete, lat, lng } =
-        await montarPayloadPedidoBase("CartaoCredito");
+      const { carrinhoComFrete, valorTotal, valorFrete, lat, lng } = await montarPayloadPedidoBase("CartaoCredito");
 
       const resp = await axios.post(`${API}/pedidos/`, {
         itens: carrinhoComFrete,
@@ -1011,7 +1045,7 @@ const Checkout = () => {
           token,
           payment_method_id,
           issuer_id,
-          installments: 1,
+          installments: installments || 1,
           payer,
         },
       });
@@ -1058,7 +1092,7 @@ const Checkout = () => {
       const payment_method_id = formData?.payment_method_id;
       const issuer_id = formData?.issuer_id;
 
-      const installments = 1;
+      const installments = Number(formData?.installments || 1) || 1;
       const payerEmail = String(formData?.payer?.email || "").trim();
 
       if (!token || !payment_method_id) {
@@ -1168,6 +1202,50 @@ const Checkout = () => {
         </Typography>
 
         <Paper sx={{ p: 2.2, borderRadius: 3, boxShadow: "0px 2px 8px rgba(15, 23, 42, 0.08)" }}>
+          {/* ✅ BARRA PIX PENDENTE (voltou a opção de cancelar / ver QR) */}
+          {pixTemPedido && (
+            <Alert
+              severity={pixExpirado ? "warning" : "info"}
+              sx={{ borderRadius: 2, mb: 1.5 }}
+              action={
+                <Stack direction="row" spacing={1}>
+                  {!pixExpirado && (
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      onClick={() => setPixCodeOpen(true)}
+                      sx={{ textTransform: "none" }}
+                    >
+                      Ver Pix
+                    </Button>
+                  )}
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    color="error"
+                    onClick={() => setConfirmCancelarPix(true)}
+                    sx={{ textTransform: "none" }}
+                  >
+                    Cancelar
+                  </Button>
+                </Stack>
+              }
+            >
+              <Stack spacing={0.5}>
+                <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
+                  <Typography fontWeight={900}>Pix {pixExpirado ? "expirado" : "pendente"}</Typography>
+                  <Chip size="small" label={pixStatusChip.label} color={pixStatusChip.color} />
+                  {!pixExpirado && (
+                    <Chip size="small" label={`Tempo: ${msToMMSS(pixTimeLeftMs)}`} variant="outlined" />
+                  )}
+                </Stack>
+                <Typography variant="body2" color="text.secondary">
+                  A confirmação chega via webhook no backend e este checkout fica consultando o status automaticamente.
+                </Typography>
+              </Stack>
+            </Alert>
+          )}
+
           <TextField
             label="Telefone"
             fullWidth
@@ -1202,9 +1280,7 @@ const Checkout = () => {
             onChange={(e) => setEmail(e.target.value)}
             disabled={travarFormulario}
             helperText={
-              isCard
-                ? "No cartão, o e-mail será solicitado no formulário abaixo."
-                : "No Pix, ajuda a melhorar aprovação e contato."
+              isCard ? "No cartão, o e-mail será solicitado no formulário abaixo." : "No Pix, ajuda a melhorar aprovação e contato."
             }
           />
 
@@ -1243,7 +1319,6 @@ const Checkout = () => {
             Endereço de Entrega
           </Typography>
 
-          {/* ✅ Se cartão estiver preparado e brick ativo, você pode travar campos para não ficar mudando amount */}
           <TextField
             label="Apelido"
             fullWidth
@@ -1268,7 +1343,7 @@ const Checkout = () => {
               setCepErro(false);
               setCepHelper("");
 
-              // se editar endereço, limpa lock do cartão (evita secure fields quebrando por remount)
+              // se editar endereço, limpa lock do cartão
               setFreteCongelado(null);
               setLatLngCongelado(null);
               setCardAmountLocked(null);
@@ -1407,8 +1482,8 @@ const Checkout = () => {
             </Paper>
           )}
 
-          {/* PAGAMENTO */}
-          {!resumoPedido._id && (
+          {/* PAGAMENTO (se Pix já foi gerado, mantém travado e a pessoa usa o modal do Pix acima) */}
+          {!pixTemPedido && (
             <Box mt={3}>
               <Grid container spacing={2} alignItems="flex-start" justifyContent="space-between">
                 <Grid item xs={12} md={6}>
@@ -1435,8 +1510,6 @@ const Checkout = () => {
                             return;
                           }
                           setFormaPagamento("CartaoCredito");
-
-                          // ✅ prepara e trava total antes de montar o brick
                           await prepararCartao();
                           return;
                         }
@@ -1448,7 +1521,6 @@ const Checkout = () => {
                           }
                           setFormaPagamento("Pix");
 
-                          // limpa locks do cartão
                           setFreteCongelado(null);
                           setLatLngCongelado(null);
                           setCardAmountLocked(null);
@@ -1625,6 +1697,9 @@ const Checkout = () => {
                         key={`mp-card-${restaurante?._id || "x"}-${brickAttempt}-${Number(cardAmountLocked || 0)}`}
                         initialization={{
                           amount: Number(cardAmountLocked || 0),
+                          payer: {
+                            email: isValidEmail(email) ? email.trim() : undefined,
+                          },
                         }}
                         customization={{
                           paymentMethods: {
@@ -1635,15 +1710,13 @@ const Checkout = () => {
                           visual: { hideFormTitle: true, hidePaymentButton: false },
                         }}
                         onSubmit={async (formData) => {
-                          await onSubmitCartao({ ...formData, installments: 1 });
+                          await onSubmitCartao(formData);
                         }}
                         onError={(err) => {
-                          // err pode vir sem message => NÃO acessa err.message direto
                           const cause = err?.cause || err?.error?.cause || err?.data?.cause;
 
                           console.error("MP CardPayment error:", err);
 
-                          // retry automático 1x (muito comum resolver quando foi montagem instável)
                           if (cause === "fields_setup_failed_after_3_tries" || cause === "fields_setup_failed") {
                             if (brickRetryRef.current < 1) {
                               brickRetryRef.current += 1;
@@ -1652,7 +1725,6 @@ const Checkout = () => {
                               return;
                             }
 
-                            // mensagem “fatal” com dicas práticas
                             setBrickFatalMsg(
                               "Não consegui carregar o formulário do cartão (Secure Fields). " +
                                 "Verifique: bloqueadores/adblock, CSP (frame-src/script-src), e tente fora de iframe/webview."
@@ -1690,13 +1762,144 @@ const Checkout = () => {
         </Paper>
       </Container>
 
-    
+      {/* ✅ MODAL PIX (voltou) */}
+      <Dialog open={pixCodeOpen} onClose={() => setPixCodeOpen(false)} fullWidth maxWidth="sm">
+        <DialogTitle>
+          <Stack direction="row" alignItems="center" justifyContent="space-between" gap={1} flexWrap="wrap">
+            <Stack direction="row" spacing={1} alignItems="center">
+              <PixIcon />
+              <Typography fontWeight={900}>Pagamento Pix</Typography>
+            </Stack>
+            <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
+              <Chip size="small" label={pixStatusChip.label} color={pixStatusChip.color} />
+              {!pixExpirado && pixTemPedido && (
+                <Chip size="small" variant="outlined" label={`Tempo: ${msToMMSS(pixTimeLeftMs)}`} />
+              )}
+              {verificandoPix && <CircularProgress size={16} />}
+            </Stack>
+          </Stack>
+        </DialogTitle>
+
+        <DialogContent dividers>
+          {!pixTemPedido ? (
+            <Alert severity="info" sx={{ borderRadius: 2 }}>
+              Nenhum Pix gerado ainda.
+            </Alert>
+          ) : pixExpirado ? (
+            <Alert severity="warning" sx={{ borderRadius: 2 }}>
+              Pix expirou. Você pode gerar um novo Pix.
+            </Alert>
+          ) : (
+            <Alert severity="info" sx={{ borderRadius: 2 }}>
+              Aguardando confirmação do pagamento (webhook no backend + consulta automática aqui).
+            </Alert>
+          )}
+
+          {pixTemPedido && !pixExpirado && (
+            <Box sx={{ mt: 2 }}>
+              {qrImgSrc ? (
+                <Box
+                  sx={{
+                    width: "100%",
+                    display: "flex",
+                    justifyContent: "center",
+                    mb: 1,
+                  }}
+                >
+                  <img
+                    src={qrImgSrc}
+                    alt="QR Code Pix"
+                    style={{
+                      width: "260px",
+                      maxWidth: "80%",
+                      borderRadius: 12,
+                      border: "1px solid #eee",
+                    }}
+                  />
+                </Box>
+              ) : null}
+
+              <Typography variant="subtitle2" fontWeight={900} sx={{ mb: 0.5 }}>
+                Copia e cola
+              </Typography>
+
+              <Paper
+                variant="outlined"
+                sx={{
+                  p: 1.2,
+                  borderRadius: 2,
+                  bgcolor: "#fafafa",
+                  wordBreak: "break-all",
+                }}
+              >
+                <Typography variant="body2">{qrCodeTexto || "—"}</Typography>
+              </Paper>
+
+              <Stack direction="row" spacing={1} sx={{ mt: 1 }} flexWrap="wrap">
+                <Button variant="contained" onClick={copiarPix} sx={{ textTransform: "none", fontWeight: 900 }}>
+                  Copiar código
+                </Button>
+                <Button variant="outlined" onClick={verificarPixAgora} sx={{ textTransform: "none" }}>
+                  Verificar agora
+                </Button>
+                <Button
+                  variant="outlined"
+                  color="error"
+                  onClick={() => setConfirmCancelarPix(true)}
+                  sx={{ textTransform: "none" }}
+                >
+                  Cancelar Pix
+                </Button>
+              </Stack>
+
+              <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: "block" }}>
+                Pedido: {resumoPedido?._id || "—"}
+              </Typography>
+            </Box>
+          )}
+
+          {pixTemPedido && pixExpirado && (
+            <Stack direction="row" spacing={1} sx={{ mt: 2 }} flexWrap="wrap">
+              <Button
+                variant="contained"
+                onClick={() => {
+                  setPixCodeOpen(false);
+                  resetarPixParaEditar();
+                }}
+                sx={{
+                  textTransform: "none",
+                  fontWeight: 900,
+                  background: "linear-gradient(90deg,#ff4b8b,#ff7a3d,#ffb347)",
+                  "&:hover": { opacity: 0.95, background: "linear-gradient(90deg,#ff4b8b,#ff7a3d,#ffb347)" },
+                }}
+              >
+                Destravar e gerar novo Pix
+              </Button>
+            </Stack>
+          )}
+        </DialogContent>
+
+        <DialogActions>
+          <Button onClick={() => setPixCodeOpen(false)} sx={{ textTransform: "none" }}>
+            Fechar
+          </Button>
+          {pixTemPedido && !pixExpirado && (
+            <Button
+              onClick={() => setConfirmEditarPix(true)}
+              variant="outlined"
+              sx={{ textTransform: "none" }}
+            >
+              Editar dados
+            </Button>
+          )}
+        </DialogActions>
+      </Dialog>
 
       <Dialog open={confirmEditarPix} onClose={() => setConfirmEditarPix(false)}>
         <DialogTitle>Editar dados?</DialogTitle>
         <DialogContent>
           <Typography variant="body2" color="text.secondary">
-            Isso vai remover o Pix pendente do navegador e destravar os campos para você editar.
+            Isso vai remover o Pix pendente do navegador e destravar os campos para você editar e gerar um novo Pix.
           </Typography>
         </DialogContent>
         <DialogActions>
@@ -1726,7 +1929,7 @@ const Checkout = () => {
         <DialogTitle>Cancelar Pix?</DialogTitle>
         <DialogContent>
           <Typography variant="body2" color="text.secondary">
-            Isso vai cancelar o Pix pendente (no navegador) e destravar os campos.
+            Isso vai cancelar o Pix pendente (no navegador) e destravar os campos. O pedido Pix ficará cancelado.
           </Typography>
         </DialogContent>
         <DialogActions>
