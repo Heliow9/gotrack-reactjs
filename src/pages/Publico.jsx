@@ -322,8 +322,41 @@ const Publico = () => {
           syncCartOwnerOrReset(restauranteFresh._id);
         }
 
-        const produtosPorCategoria =
+        let produtosPorCategoria =
           res.data?.produtosPorCategoria || restauranteFresh?.produtosPorCategoria || [];
+
+        // ✅ Correção crítica: algumas versões da API pública /restaurantes/:slug
+        // retornavam precoBase vazio, mesmo com preço salvo no produto.
+        // Buscamos a rota de produtos do restaurante e mesclamos preço/dados pelo _id.
+        try {
+          if (restauranteFresh?._id) {
+            const produtosRes = await axios.get(`${API_URL}/produtos/${restauranteFresh._id}`);
+            const produtosLista = Array.isArray(produtosRes.data) ? produtosRes.data : [];
+            const produtosMap = new Map(produtosLista.map((p) => [String(p._id), p]));
+
+            produtosPorCategoria = (produtosPorCategoria || []).map((cat) => ({
+              ...cat,
+              itens: (cat.itens || []).map((item) => {
+                const completo = produtosMap.get(String(item._id));
+                if (!completo) return item;
+
+                const precoCorrigido = getItemBasePrice(completo) || getItemBasePrice(item);
+                return {
+                  ...item,
+                  ...completo,
+                  categoriaType: item.categoriaType || cat.tipo || completo.categoriaType,
+                  pizzaMultisabor: item.pizzaMultisabor ?? cat.pizzaMultisabor ?? completo.pizzaMultisabor,
+                  calculoPrecoPor: item.calculoPrecoPor || cat.calculoPrecoPor || completo.calculoPrecoPor,
+                  maxSabores: item.maxSabores || cat.maxSabores || completo.maxSabores,
+                  preco: precoCorrigido,
+                  precoBase: precoCorrigido,
+                };
+              }),
+            }));
+          }
+        } catch (precoErr) {
+          console.warn("Não foi possível sincronizar preços pela rota /produtos:", precoErr);
+        }
 
         localStorage.setItem("restauranteSelecionado", JSON.stringify(restauranteFresh));
 
@@ -335,6 +368,11 @@ const Publico = () => {
         const categoriasComItensFiltrados = categoriasBase.map((cat) => ({
           ...cat,
           itens: (cat.itens || [])
+            .map((prod) => ({
+              ...prod,
+              precoBase: getItemBasePrice(prod),
+              preco: getItemBasePrice(prod),
+            }))
             .filter((prod) => prod.ativo !== false)
             .sort((a, b) => (a.ordem || 0) - (b.ordem || 0)),
         }));
