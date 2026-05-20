@@ -27,6 +27,10 @@ import { calcularStatusLoja } from "../utils/horarioLoja";
 const DEFAULT_IMAGE_URL =
   "https://cdn-icons-png.flaticon.com/512/1404/1404945.png";
 
+const CART_KEY = "carrinho";
+const CART_OWNER_KEY = "carrinho_restaurante_id";
+const PIX_PENDENTE_KEY = "pix_pendente";
+
 // ===== helpers =====
 function formatBRL(v) {
   const num = Number(v || 0);
@@ -42,6 +46,29 @@ function getRestauranteFromLS() {
     return parsed;
   } catch {
     return null;
+  }
+}
+
+function getCurrentRestaurantId() {
+  const r = getRestauranteFromLS();
+  return r?._id ? String(r._id) : "";
+}
+
+function readCartForCurrentRestaurant() {
+  try {
+    const currentId = getCurrentRestaurantId();
+    const owner = String(localStorage.getItem(CART_OWNER_KEY) || "");
+    const arr = JSON.parse(localStorage.getItem(CART_KEY) || "[]");
+
+    if (currentId && owner && owner !== currentId) {
+      localStorage.removeItem(CART_KEY);
+      localStorage.removeItem(PIX_PENDENTE_KEY);
+      return [];
+    }
+
+    return Array.isArray(arr) ? arr : [];
+  } catch {
+    return [];
   }
 }
 
@@ -84,13 +111,7 @@ export default function Carrinho() {
     severity: "info",
   });
 
-  const [itens, setItens] = useState(() => {
-    try {
-      return JSON.parse(localStorage.getItem("carrinho")) || [];
-    } catch {
-      return [];
-    }
-  });
+  const [itens, setItens] = useState(() => readCartForCurrentRestaurant());
 
   const slugEfetivo = useMemo(() => {
     const ls = getRestauranteFromLS();
@@ -106,6 +127,7 @@ export default function Carrinho() {
   useEffect(() => {
     const r = getRestauranteFromLS();
     if (r) setRestaurante(r);
+    setItens(readCartForCurrentRestaurant());
     setStatusLoja(calcularStatusLoja(r));
 
     const t = setInterval(() => {
@@ -118,7 +140,7 @@ export default function Carrinho() {
 
   // Persistência carrinho
   useEffect(() => {
-    localStorage.setItem("carrinho", JSON.stringify(itens || []));
+    localStorage.setItem(CART_KEY, JSON.stringify(itens || []));
   }, [itens]);
 
   // ✅ Total (prioriza precoTotal que o Modal já grava pronto)

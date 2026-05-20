@@ -1,2 +1,15 @@
-export const API_BASE_URL = import.meta.env.VITE_API_URL || "https://api.movyo.delivery/api";
-export const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN || "pk.eyJ1IjoiaGVsaW93OSIsImEiOiJjbTljNDRnazgwZ3BmMmxwdW9nbWk1c3ZmIn0.NR96Um-T_CqTI3jDb7c2OQ";
+function stripTrailingSlash(value) {
+  return String(value || "").trim().replace(/\/+$/, "");
+}
+
+const rawApi = stripTrailingSlash(import.meta.env.VITE_API_URL || import.meta.env.VITE_API_ORIGIN || "https://api.movyo.delivery");
+
+const API_ORIGIN = rawApi.endsWith("/api") ? rawApi.slice(0, -4) : rawApi;
+const API_URL = rawApi.endsWith("/api") ? rawApi : `${rawApi}/api`;
+
+// Compatibilidade com arquivos antigos da vitrine.
+const API_BASE_URL = API_URL;
+const MAPBOX_TOKEN = String(import.meta.env.VITE_MAPBOX_TOKEN || import.meta.env.REACT_APP_MAPBOX_TOKEN || "").trim();
+
+export { API_ORIGIN, API_URL, API_BASE_URL, MAPBOX_TOKEN };
+export default { API_ORIGIN, API_URL, API_BASE_URL, MAPBOX_TOKEN };

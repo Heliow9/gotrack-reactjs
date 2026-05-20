@@ -58,6 +58,9 @@ const MP_PUBLIC_KEY = String(import.meta.env.VITE_MP_PUBLIC_KEY || "").trim();
 
 // ====== Constantes ======
 const LS_CLIENT_PHONE_KEY = "cliente_telefone";
+const CART_KEY = "carrinho";
+const CART_OWNER_KEY = "carrinho_restaurante_id";
+const PIX_PENDENTE_KEY = "pix_pendente";
 const DEFAULT_IMAGE_URL = "";
 
 const PIX_STATUS_URL = `${API}/publico/mercadopago/pix/status`;
@@ -81,6 +84,34 @@ function msToMMSS(ms) {
   const mm = String(Math.floor(s / 60)).padStart(2, "0");
   const ss = String(s % 60).padStart(2, "0");
   return `${mm}:${ss}`;
+}
+
+function getRestauranteAtualStorage() {
+  try {
+    const raw = JSON.parse(localStorage.getItem("restauranteSelecionado") || "null");
+    return raw?.restaurante && typeof raw.restaurante === "object" ? raw.restaurante : raw;
+  } catch {
+    return null;
+  }
+}
+
+function readCartForCurrentRestaurant() {
+  try {
+    const rest = getRestauranteAtualStorage();
+    const currentId = rest?._id ? String(rest._id) : "";
+    const owner = String(localStorage.getItem(CART_OWNER_KEY) || "");
+    const arr = JSON.parse(localStorage.getItem(CART_KEY) || "[]");
+
+    if (currentId && owner && owner !== currentId) {
+      localStorage.removeItem(CART_KEY);
+      localStorage.removeItem(PIX_PENDENTE_KEY);
+      return [];
+    }
+
+    return Array.isArray(arr) ? arr : [];
+  } catch {
+    return [];
+  }
 }
 
 /**
@@ -448,14 +479,14 @@ const Checkout = () => {
     const savedPhone = (localStorage.getItem(LS_CLIENT_PHONE_KEY) || "").replace(/\D/g, "");
     if (savedPhone && !telefone) setTelefone(formatarTelefone(savedPhone));
 
-    const carrinho = JSON.parse(localStorage.getItem("carrinho") || "[]");
+    const carrinho = readCartForCurrentRestaurant();
     setItensPreview(carrinho);
 
     const subtotal = carrinho.reduce((acc, item) => acc + calcularValorItem(item), 0);
     setSubtotalPreview(subtotal);
 
     try {
-      const pend = JSON.parse(localStorage.getItem("pix_pendente") || "null");
+      const pend = JSON.parse(localStorage.getItem(PIX_PENDENTE_KEY) || "null");
 
       if (pend?.telefone) {
         const pTel = String(pend.telefone).replace(/\D/g, "");
@@ -683,7 +714,7 @@ const Checkout = () => {
 
   // ===== Payload base (Pix / Cartão) =====
   const montarPayloadPedidoBase = async (paymentMethod = "Pix") => {
-    const carrinho = JSON.parse(localStorage.getItem("carrinho") || "[]");
+    const carrinho = readCartForCurrentRestaurant();
 
     if (!restaurante?._id) throw new Error("Restaurante não identificado. Volte para a vitrine.");
     if (telLimpo.length < 10 || !nome?.trim() || !endereco.rua?.trim() || carrinho.length === 0) {
@@ -787,8 +818,8 @@ const Checkout = () => {
           limparPollingPix();
           setVerificandoPix(false);
 
-          localStorage.removeItem("carrinho");
-          localStorage.removeItem("pix_pendente");
+          localStorage.removeItem(CART_KEY);
+          localStorage.removeItem(PIX_PENDENTE_KEY);
 
           toast("success", "Pagamento aprovado! ✅ Redirecionando...");
           const telGo = (telLimpo || localStorage.getItem(LS_CLIENT_PHONE_KEY) || "").replace(/\D/g, "");
@@ -804,7 +835,7 @@ const Checkout = () => {
   const resetarPixParaEditar = () => {
     limparPollingPix();
     limparCountdownPix();
-    localStorage.removeItem("pix_pendente");
+    localStorage.removeItem(PIX_PENDENTE_KEY);
 
     setResumoPedido({ itens: [], total: 0, frete: 0, _id: null });
     setQrCodeTexto("");
@@ -927,7 +958,7 @@ const Checkout = () => {
       setPixTimeLeftMs(expiresAt - Date.now());
 
       localStorage.setItem(
-        "pix_pendente",
+        PIX_PENDENTE_KEY,
         JSON.stringify({
           _id: pedidoId,
           telefone: telLimpo,
@@ -971,7 +1002,7 @@ const Checkout = () => {
       setFormaPagamento("Pix");
       return;
     }
-    const carrinho = JSON.parse(localStorage.getItem("carrinho") || "[]");
+    const carrinho = readCartForCurrentRestaurant();
     if (!carrinho.length) {
       toast("warning", "Seu carrinho está vazio.");
       setFormaPagamento("Pix");
@@ -1055,7 +1086,7 @@ const Checkout = () => {
       const status = String(resp.data?.statusPagamento || "").toLowerCase();
 
       if (status === "approved" || status === "paid") {
-        localStorage.removeItem("carrinho");
+        localStorage.removeItem(CART_KEY);
         toast("success", "Pagamento aprovado! ✅ Redirecionando...");
         const telGo = (telLimpo || localStorage.getItem(LS_CLIENT_PHONE_KEY) || "").replace(/\D/g, "");
         setTimeout(() => navigate(`/p/meus-pedidos/${telGo}`), 650);

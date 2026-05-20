@@ -257,7 +257,17 @@ const Publico = () => {
     // ✅ evita "flash" de restaurante errado:
     // só usa restaurante do LS se não tiver slug na URL ou se bater com o slug atual
     const slugLS = restauranteLS?.slugIdentificador || restauranteLS?.slug || null;
-    const podeUsarLS = !slug || (slugLS && slugLS === slug);
+
+    // ✅ Se o cliente saiu de /p/movyo para /p/jrlanches, limpa imediatamente
+    // antes mesmo da API responder. Isso impede carrinho/PIX de uma loja aparecer na outra.
+    if (slug && slugLS && String(slugLS).toLowerCase() !== String(slug).toLowerCase()) {
+      localStorage.removeItem(CART_KEY);
+      localStorage.removeItem(CART_OWNER_KEY);
+      localStorage.removeItem(PIX_PENDENTE_KEY);
+      setQuantidadeCarrinho(0);
+    }
+
+    const podeUsarLS = !slug || (slugLS && String(slugLS).toLowerCase() === String(slug).toLowerCase());
 
     if (podeUsarLS && restauranteLS) {
       setRestaurante(restauranteLS);
