@@ -37,14 +37,16 @@ import SearchIcon from "@mui/icons-material/Search";
 import CloseIcon from "@mui/icons-material/Close";
 import AddShoppingCartIcon from "@mui/icons-material/AddShoppingCart";
 import StarIcon from "@mui/icons-material/Star";
+import StorefrontIcon from "@mui/icons-material/Storefront";
 
 import ModalProduto from "../components/ModalProduto";
 import axios from "axios";
+import { API_BASE_URL } from "../config";
 
 const DEFAULT_IMAGE_URL =
   "https://cdn-icons-png.flaticon.com/512/1404/1404945.png";
 
-const API_URL = "https://api.movyo.delivery/api";
+const API_URL = API_BASE_URL;
 
 // ✅ chaves do storage (controle por restaurante)
 const CART_KEY = "carrinho";
@@ -135,8 +137,32 @@ function normalizarRestaurante(qualquerCoisa) {
   return qualquerCoisa;
 }
 
+function parseMoney(value) {
+  if (value == null || value === "") return 0;
+  if (typeof value === "number") return Number.isFinite(value) ? value : 0;
+  if (typeof value === "string") {
+    const cleaned = value.replace(/[^\d,.-]/g, "");
+    const normalized = cleaned.includes(",") ? cleaned.replace(/\./g, "").replace(",", ".") : cleaned;
+    const parsed = Number(normalized);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+  return 0;
+}
+
+function getItemBasePrice(item = {}) {
+  return parseMoney(
+    item.precoBase ??
+      item.preco ??
+      item.valor ??
+      item.precoFinal ??
+      item.price ??
+      item.amount ??
+      item.valorUnitario
+  );
+}
+
 function formatBRL(value) {
-  const num = Number(value || 0);
+  const num = parseMoney(value);
   return num.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
 
@@ -569,7 +595,7 @@ const Publico = () => {
 
     setProdutoSelecionado({
       ...item,
-      precoBase: item.precoBase,
+      precoBase: getItemBasePrice(item),
       categoriaType,
 
       pizzaMultisabor,
@@ -593,11 +619,12 @@ const Publico = () => {
     const sabores = item?.sabores || [];
 
     if (shouldShowAPartirDe({ categoria, item, categoriaType }) && sabores.length > 0) {
-      const menor = Math.min(...sabores.map((s) => Number(s.preco || 0)));
-      if (Number.isFinite(menor)) return `a partir de ${formatBRL(menor)}`;
+      const precos = sabores.map((s) => getItemBasePrice(s)).filter((v) => v > 0);
+      if (precos.length > 0) return `a partir de ${formatBRL(Math.min(...precos))}`;
     }
 
-    return formatBRL(item.precoBase || 0);
+    const preco = getItemBasePrice(item);
+    return preco > 0 ? formatBRL(preco) : "Consultar valor";
   };
 
   const chipsInfo = useMemo(() => {
@@ -621,7 +648,7 @@ const Publico = () => {
   return (
     <Box sx={{ pb: 10, backgroundColor: "#f5f5f7", minHeight: "100vh" }}>
       <Helmet>
-        {restaurante ? <title>{restaurante.nome} - Faça seu pedido</title> : <title>Carregando loja...</title>}
+        {restaurante ? <title>{restaurante.nome} - Faça seu pedido</title> : <title>Movyo Delivery</title>}
       </Helmet>
 
       {/* APPBAR */}
@@ -630,7 +657,7 @@ const Publico = () => {
         elevation={2}
         sx={{
           zIndex: 1201,
-          background: "linear-gradient(90deg, #ff4b8b 0%, #ff7a3d 45%, #ffb347 100%)",
+          background: "linear-gradient(135deg, #111827 0%, #1f2937 48%, #ff7a3d 100%)",
         }}
       >
         <Toolbar
@@ -1044,17 +1071,49 @@ const Publico = () => {
       {/* LISTA */}
       <Container sx={{ py: 2 }} disableGutters>
         {loadingProdutos ? (
-          <>
+          <Box sx={{ px: 2, pt: 1 }}>
+            <Paper
+              elevation={0}
+              sx={{
+                p: 2.5,
+                mb: 2.5,
+                borderRadius: 4,
+                bgcolor: "#fff",
+                border: "1px solid rgba(15,23,42,0.06)",
+                boxShadow: "0 14px 35px rgba(15,23,42,0.06)",
+              }}
+            >
+              <Stack direction="row" spacing={1.5} alignItems="center">
+                <Avatar sx={{ bgcolor: "#fff3eb", color: "#ff7a3d", width: 52, height: 52 }}>
+                  <StorefrontIcon />
+                </Avatar>
+                <Box sx={{ flex: 1 }}>
+                  <Typography fontWeight={1000}>Preparando sua loja</Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    Estamos organizando cardápio, categorias e valores.
+                  </Typography>
+                </Box>
+              </Stack>
+            </Paper>
+
             {[1, 2, 3].map((s) => (
-              <Box key={s} sx={{ mb: 3, px: 2 }}>
-                <Skeleton variant="text" width={160} height={28} sx={{ mb: 1 }} />
-                <Divider sx={{ mb: 2 }} />
+              <Box key={s} sx={{ mb: 3 }}>
+                <Skeleton variant="text" width={170} height={30} sx={{ mb: 1 }} />
                 {[1, 2].map((i) => (
-                  <Skeleton key={i} variant="rounded" height={90} sx={{ mb: 2, borderRadius: 2 }} />
+                  <Paper key={i} elevation={0} sx={{ p: 1.5, mb: 1.2, borderRadius: 3, bgcolor: "#fff" }}>
+                    <Stack direction="row" spacing={1.5} alignItems="center">
+                      <Box sx={{ flex: 1 }}>
+                        <Skeleton variant="text" width="70%" height={24} />
+                        <Skeleton variant="text" width="95%" height={18} />
+                        <Skeleton variant="text" width={90} height={24} />
+                      </Box>
+                      <Skeleton variant="rounded" width={88} height={88} sx={{ borderRadius: 2 }} />
+                    </Stack>
+                  </Paper>
                 ))}
               </Box>
             ))}
-          </>
+          </Box>
         ) : produtos.length === 0 ? (
           <Box sx={{ textAlign: "center", mt: 6, color: "text.secondary", px: 2 }}>
             <Typography variant="subtitle1" fontWeight={900}>
@@ -1260,7 +1319,7 @@ const Publico = () => {
       <Paper elevation={10} sx={{ position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 1000 }}>
         <BottomNavigation showLabels>
           <BottomNavigationAction label="Início" icon={<HomeIcon />} onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })} />
-          <BottomNavigationAction label="Pedidos" icon={<ListAltIcon />} onClick={() => navigate("/p/meus-pedidos")} />
+          <BottomNavigationAction label="Pedidos" icon={<ListAltIcon />} onClick={() => navigate(`/p/meus-pedidos/${localStorage.getItem("telefoneCliente") || ""}`)} />
           <BottomNavigationAction
             label="Carrinho"
             icon={

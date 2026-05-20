@@ -1,14 +1,13 @@
 import axios from 'axios';
+import { API_BASE_URL } from '../config';
 
 const api = axios.create({
-  baseURL: 'https://api.movyo.delivery/api/restaurantes', // Ajuste se necessário
+  baseURL: API_BASE_URL,
 });
 
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem('token');
-  if (token) {
-    config.headers.Authorization = token;
-  }
+  if (token) config.headers.Authorization = token;
   return config;
 });
 

@@ -45,13 +45,13 @@ import ExpandLessIcon from "@mui/icons-material/ExpandLess";
 // ✅ Mercado Pago Brick
 import { initMercadoPago, CardPayment } from "@mercadopago/sdk-react";
 
+import { API_BASE_URL, MAPBOX_TOKEN } from "../config";
+
 // ====== API base robusta ======
-const RAW_API = (import.meta.env.VITE_API_URL || "https://api.movyo.delivery").replace(/\/$/, "");
-const API = RAW_API.endsWith("/api") ? RAW_API : `${RAW_API}/api`;
+const API = API_BASE_URL;
 
 // ====== Mapbox ======
-const MAPBOX_TOKEN =
-  "pk.eyJ1IjoiaGVsaW93OSIsImEiOiJjbTljNDRnazgwZ3BmMmxwdW9nbWk1c3ZmIn0.NR96Um-T_CqTI3jDb7c2OQ";
+const MAPBOX_PUBLIC_TOKEN = MAPBOX_TOKEN;
 
 // ====== MP Public Key (trim!) ======
 const MP_PUBLIC_KEY = String(import.meta.env.VITE_MP_PUBLIC_KEY || "").trim();
@@ -570,7 +570,7 @@ const Checkout = () => {
     const fullAddress = `${endereco.rua} ${endereco.numero}, ${endereco.bairro}, ${endereco.cidade} - ${endereco.estado}, ${endereco.cep}, Brazil`;
     const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(
       fullAddress
-    )}.json?access_token=${MAPBOX_TOKEN}`;
+    )}.json?access_token=${MAPBOX_PUBLIC_TOKEN}`;
 
     const res = await fetch(url);
     const data = await res.json();

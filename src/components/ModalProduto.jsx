@@ -29,8 +29,32 @@ const DEFAULT_IMAGE_URL =
 const CART_KEY = "carrinho";
 const CART_OWNER_KEY = "carrinho_restaurante_id"; // ✅ dono do carrinho (restaurante)
 
+function parseMoney(value) {
+  if (value == null || value === "") return 0;
+  if (typeof value === "number") return Number.isFinite(value) ? value : 0;
+  if (typeof value === "string") {
+    const cleaned = value.replace(/[^\d,.-]/g, "");
+    const normalized = cleaned.includes(",") ? cleaned.replace(/\./g, "").replace(",", ".") : cleaned;
+    const parsed = Number(normalized);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+  return 0;
+}
+
+function getItemBasePrice(item = {}) {
+  return parseMoney(
+    item.precoBase ??
+      item.preco ??
+      item.valor ??
+      item.precoFinal ??
+      item.price ??
+      item.amount ??
+      item.valorUnitario
+  );
+}
+
 function formatBRL(value) {
-  const num = Number(value || 0);
+  const num = parseMoney(value);
   return num.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
 
@@ -124,13 +148,13 @@ const ModalProduto = ({ open, onClose, produto }) => {
   const precoTotal = useMemo(() => {
     if (!produto) return 0;
 
-    let total = Number(produto.precoBase || 0);
+    let total = getItemBasePrice(produto);
 
     if (isPizza && saboresSelecionados.length > 0) {
       const precos = saboresSelecionados
         .map((nome) => {
           const sabor = saboresDisp.find((s) => s.nome === nome);
-          return Number(sabor?.preco || 0);
+          return getItemBasePrice(sabor);
         })
         .filter((v) => Number.isFinite(v));
 
@@ -147,22 +171,22 @@ const ModalProduto = ({ open, onClose, produto }) => {
 
     if (bordaSelecionada !== "nenhum") {
       const borda = produto.bordasDisponiveis?.find((b) => b.nome === bordaSelecionada);
-      total += Number(borda?.preco || 0);
+      total += getItemBasePrice(borda);
     }
 
     if (adicionalSelecionado !== "nenhum") {
       const adicional = produto.adicionais?.find((a) => a.nome === adicionalSelecionado);
-      total += Number(adicional?.preco || 0);
+      total += getItemBasePrice(adicional);
     }
 
     complementosSelecionados.forEach((nome) => {
       const comp = produto.complementos?.find((c) => c.nome === nome);
-      total += Number(comp?.preco || 0);
+      total += getItemBasePrice(comp);
     });
 
     Object.entries(tiposExtrasSelecionados).forEach(([, itens]) => {
       if (Array.isArray(itens)) {
-        for (const item of itens) total += Number(item?.preco || 0);
+        for (const item of itens) total += getItemBasePrice(item);
       }
     });
 
@@ -274,7 +298,7 @@ const ModalProduto = ({ open, onClose, produto }) => {
       quantidade,
 
       // preços
-      precoUnitario: Number(produto.precoBase || 0),
+      precoUnitario: getItemBasePrice(produto),
       precoTotal: Number(precoTotal || 0),
     };
 
@@ -289,14 +313,14 @@ const ModalProduto = ({ open, onClose, produto }) => {
   const precoPizzaAPartir = mostrarPrecoBasePizza
     ? (() => {
         const min = saboresDisp.reduce((menor, s) => {
-          const p = Number(s.preco || Number.POSITIVE_INFINITY);
+          const p = getItemBasePrice(s) || Number.POSITIVE_INFINITY;
           return Math.min(menor, p);
         }, Number.POSITIVE_INFINITY);
 
-        if (!isFinite(min)) return Number(produto.precoBase || 0);
+        if (!isFinite(min)) return getItemBasePrice(produto);
         return min;
       })()
-    : Number(produto.precoBase || 0);
+    : getItemBasePrice(produto);
 
   return (
     <>
