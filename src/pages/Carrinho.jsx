@@ -22,6 +22,7 @@ import AddIcon from "@mui/icons-material/Add";
 import RemoveIcon from "@mui/icons-material/Remove";
 import AccessTimeIcon from "@mui/icons-material/AccessTime";
 import { useNavigate, useParams } from "react-router-dom";
+import { calcularStatusLoja } from "../utils/horarioLoja";
 
 const DEFAULT_IMAGE_URL =
   "https://cdn-icons-png.flaticon.com/512/1404/1404945.png";
@@ -30,46 +31,6 @@ const DEFAULT_IMAGE_URL =
 function formatBRL(v) {
   const num = Number(v || 0);
   return num.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-}
-
-function calcularStatusLoja(rest) {
-  const dias = [
-    "domingo",
-    "segunda",
-    "terca",
-    "quarta",
-    "quinta",
-    "sexta",
-    "sabado",
-  ];
-  const hoje = new Date();
-  const diaAtual = dias[hoje.getDay()];
-  const horarioHoje = rest?.horariosFuncionamento?.[diaAtual];
-
-  if (!horarioHoje || horarioHoje.fechado) return "Fechado";
-
-  const [abreHora, abreMin] = (horarioHoje.abre || "00:00")
-    .split(":")
-    .map(Number);
-  const [fechaHora, fechaMin] = (horarioHoje.fecha || "00:00")
-    .split(":")
-    .map(Number);
-
-  const agora = new Date();
-
-  const horarioAbre = new Date(agora);
-  horarioAbre.setHours(abreHora, abreMin, 0, 0);
-
-  const horarioFecha = new Date(agora);
-  horarioFecha.setHours(fechaHora, fechaMin, 0, 0);
-
-  // atravessa meia-noite
-  if (horarioFecha <= horarioAbre) {
-    horarioFecha.setDate(horarioFecha.getDate() + 1);
-    if (agora < horarioAbre) horarioAbre.setDate(horarioAbre.getDate() - 1);
-  }
-
-  return agora >= horarioAbre && agora < horarioFecha ? "Aberto agora" : "Fechado";
 }
 
 function getRestauranteFromLS() {

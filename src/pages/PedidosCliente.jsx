@@ -14,6 +14,7 @@ import {
   TextField,
   Avatar,
   Alert,
+  IconButton,
 } from "@mui/material";
 import {
   CheckCircleOutline,
@@ -25,6 +26,9 @@ import {
   ReceiptLong,
   Search,
   Storefront,
+  Edit,
+  PhoneIphone,
+  ShoppingBag,
 } from "@mui/icons-material";
 import { useParams, useNavigate } from "react-router-dom";
 import axios from "axios";
@@ -33,6 +37,7 @@ import { Helmet } from "react-helmet";
 import { API_BASE_URL } from "../config";
 
 const API_URL = API_BASE_URL;
+const GLOBAL_PHONE_KEY = "telefoneCliente";
 
 function parseValor(valor) {
   if (valor == null || valor === "") return 0;
@@ -54,6 +59,14 @@ function onlyDigits(value) {
   return String(value || "").replace(/\D/g, "");
 }
 
+function formatTelefone(value) {
+  const d = onlyDigits(value);
+  if (d.length <= 2) return d;
+  if (d.length <= 6) return `(${d.slice(0, 2)}) ${d.slice(2)}`;
+  if (d.length <= 10) return `(${d.slice(0, 2)}) ${d.slice(2, 6)}-${d.slice(6)}`;
+  return `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7, 11)}`;
+}
+
 function getRestauranteAtual() {
   try {
     const raw = JSON.parse(localStorage.getItem("restauranteSelecionado") || "null");
@@ -63,10 +76,25 @@ function getRestauranteAtual() {
   }
 }
 
+function phoneKey(restaurante) {
+  const id = restaurante?._id || restaurante?.slugIdentificador || restaurante?.slug;
+  return id ? `telefoneCliente:${id}` : GLOBAL_PHONE_KEY;
+}
+
+function getTelefoneSalvo(restaurante) {
+  return onlyDigits(localStorage.getItem(phoneKey(restaurante)) || localStorage.getItem(GLOBAL_PHONE_KEY) || "");
+}
+
+function saveTelefone(restaurante, telefone) {
+  const tel = onlyDigits(telefone);
+  localStorage.setItem(GLOBAL_PHONE_KEY, tel);
+  localStorage.setItem(phoneKey(restaurante), tel);
+}
+
 function getItemTotal(item) {
   const direto = parseValor(item?.precoTotal ?? item?.valorTotal ?? item?.total);
   if (direto > 0) return direto;
-  return parseValor(item?.precoUnitario ?? item?.preco ?? item?.valor) * Number(item?.quantidade || 1);
+  return parseValor(item?.precoUnitario ?? item?.preco ?? item?.valor ?? item?.precoBase) * Number(item?.quantidade || 1);
 }
 
 const statusMap = {
@@ -90,9 +118,11 @@ const PedidosCliente = () => {
   const { telefone: telefoneParam } = useParams();
   const navigate = useNavigate();
   const restaurante = getRestauranteAtual();
+  const telefoneInicial = onlyDigits(telefoneParam || getTelefoneSalvo(restaurante));
 
-  const [telefoneBusca, setTelefoneBusca] = useState(onlyDigits(telefoneParam || localStorage.getItem("telefoneCliente") || ""));
-  const [telefoneAtivo, setTelefoneAtivo] = useState(onlyDigits(telefoneParam || ""));
+  const [telefoneBusca, setTelefoneBusca] = useState(telefoneInicial);
+  const [telefoneAtivo, setTelefoneAtivo] = useState("");
+  const [editandoTelefone, setEditandoTelefone] = useState(!telefoneInicial);
   const [pedidos, setPedidos] = useState([]);
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState("");
@@ -104,13 +134,16 @@ const PedidosCliente = () => {
     const tel = onlyDigits(telefoneDigitado);
     if (tel.length < 8) {
       setErro("Informe o telefone usado no pedido.");
+      setEditandoTelefone(true);
       return;
     }
 
     setErro("");
     setLoading(true);
     setTelefoneAtivo(tel);
-    localStorage.setItem("telefoneCliente", tel);
+    setTelefoneBusca(tel);
+    setEditandoTelefone(false);
+    saveTelefone(restaurante, tel);
 
     try {
       const res = await axios.get(`${API_URL}/publico/pedidos/${tel}`);
@@ -126,7 +159,7 @@ const PedidosCliente = () => {
   };
 
   useEffect(() => {
-    const tel = onlyDigits(telefoneParam || "");
+    const tel = onlyDigits(telefoneParam || getTelefoneSalvo(restaurante));
     if (tel) buscarPedidos(tel);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [telefoneParam]);
@@ -143,23 +176,15 @@ const PedidosCliente = () => {
 
   const renderDetalhesItem = (item) => (
     <Stack spacing={0.25} sx={{ mt: 0.5 }}>
-      {item.saboresSelecionados?.length > 0 && (
-        <Typography variant="caption" color="text.secondary">Sabores: {item.saboresSelecionados.join(" / ")}</Typography>
-      )}
-      {item.bordaSelecionada?.nome && (
-        <Typography variant="caption" color="text.secondary">Borda: {item.bordaSelecionada.nome} (+{formatBRL(item.bordaSelecionada.preco)})</Typography>
-      )}
-      {item.adicionalSelecionado?.nome && (
-        <Typography variant="caption" color="text.secondary">Adicional: {item.adicionalSelecionado.nome} (+{formatBRL(item.adicionalSelecionado.preco)})</Typography>
-      )}
+      {item.saboresSelecionados?.length > 0 && <Typography variant="caption" color="text.secondary">Sabores: {item.saboresSelecionados.join(" / ")}</Typography>}
+      {item.bordaSelecionada?.nome && <Typography variant="caption" color="text.secondary">Borda: {item.bordaSelecionada.nome} (+{formatBRL(item.bordaSelecionada.preco)})</Typography>}
+      {item.adicionalSelecionado?.nome && <Typography variant="caption" color="text.secondary">Adicional: {item.adicionalSelecionado.nome} (+{formatBRL(item.adicionalSelecionado.preco)})</Typography>}
       {item.complementosSelecionados?.length > 0 && (
         <Typography variant="caption" color="text.secondary">
           Complementos: {item.complementosSelecionados.map((c) => `${c.nome} (+${formatBRL(c.preco)})`).join(", ")}
         </Typography>
       )}
-      {item.observacao && (
-        <Typography variant="caption" color="text.secondary">Obs.: {item.observacao}</Typography>
-      )}
+      {item.observacao && <Typography variant="caption" color="text.secondary">Obs.: {item.observacao}</Typography>}
     </Stack>
   );
 
@@ -170,28 +195,13 @@ const PedidosCliente = () => {
     const criadoEm = pedido.criadoEm || pedido.createdAt || pedido.dataCriacao;
 
     return (
-      <Paper
-        key={pedido._id || pedido.numeroPedido}
-        elevation={0}
-        sx={{
-          mb: 2,
-          p: 2,
-          borderRadius: 4,
-          bgcolor: "#fff",
-          border: "1px solid rgba(15,23,42,0.08)",
-          boxShadow: "0 12px 28px rgba(15,23,42,0.05)",
-        }}
-      >
+      <Paper key={pedido._id || pedido.numeroPedido} elevation={0} sx={{ mb: 2, p: 2, borderRadius: 4, bgcolor: "#fff", border: "1px solid rgba(255,122,61,0.16)", boxShadow: "0 14px 34px rgba(15,23,42,0.07)" }}>
         <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={1.5}>
           <Box sx={{ minWidth: 0 }}>
-            <Typography variant="subtitle1" fontWeight={1000} noWrap>
-              Pedido #{pedido.numeroPedido || String(pedido._id || "").slice(-6)}
-            </Typography>
-            <Typography variant="body2" color="text.secondary">
-              {criadoEm ? new Date(criadoEm).toLocaleString("pt-BR") : "Data indisponível"}
-            </Typography>
+            <Typography variant="subtitle1" fontWeight={1000} noWrap>Pedido #{pedido.numeroPedido || String(pedido._id || "").slice(-6)}</Typography>
+            <Typography variant="body2" color="text.secondary">{criadoEm ? new Date(criadoEm).toLocaleString("pt-BR") : "Data indisponível"}</Typography>
           </Box>
-          <Chip icon={statusInfo.icon} label={statusInfo.label} color={statusInfo.color} sx={{ fontWeight: 800 }} />
+          <Chip icon={statusInfo.icon} label={statusInfo.label} color={statusInfo.color} sx={{ fontWeight: 900, borderRadius: 999 }} />
         </Stack>
 
         <Divider sx={{ my: 1.5 }} />
@@ -200,12 +210,8 @@ const PedidosCliente = () => {
           {(pedido.itens || []).map((item, i) => (
             <Box key={i}>
               <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={1}>
-                <Typography variant="body2" fontWeight={900} sx={{ flex: 1 }}>
-                  {Number(item.quantidade || 1)}x {item.nome}
-                </Typography>
-                <Typography variant="body2" fontWeight={1000} color="primary.main">
-                  {formatBRL(getItemTotal(item))}
-                </Typography>
+                <Typography variant="body2" fontWeight={900} sx={{ flex: 1 }}>{Number(item.quantidade || 1)}x {item.nome}</Typography>
+                <Typography variant="body2" fontWeight={1000} sx={{ color: "#0f3a5f" }}>{formatBRL(getItemTotal(item))}</Typography>
               </Stack>
               {renderDetalhesItem(item)}
             </Box>
@@ -216,7 +222,7 @@ const PedidosCliente = () => {
 
         <Stack direction="row" justifyContent="space-between" alignItems="center">
           <Typography variant="body2" color="text.secondary" fontWeight={800}>Total do pedido</Typography>
-          <Typography variant="h6" color="primary.main" fontWeight={1000}>{formatBRL(total)}</Typography>
+          <Typography variant="h6" sx={{ color: "#0f3a5f" }} fontWeight={1000}>{formatBRL(total)}</Typography>
         </Stack>
       </Paper>
     );
@@ -228,69 +234,56 @@ const PedidosCliente = () => {
         <title>{restaurante?.nome ? `${restaurante.nome} - Meus pedidos` : "Meus pedidos - Movyo"}</title>
       </Helmet>
 
-      <AppBar position="sticky" elevation={0} sx={{ bgcolor: "#111827" }}>
+      <AppBar position="sticky" elevation={0} sx={{ background: "linear-gradient(90deg, #ff4b8b 0%, #ff7a3d 48%, #ffb347 100%)" }}>
         <Toolbar sx={{ gap: 1.5 }}>
-          <Button color="inherit" onClick={voltarLoja} sx={{ minWidth: "auto", borderRadius: 999 }}>
-            <ArrowBack />
-          </Button>
+          <IconButton color="inherit" onClick={voltarLoja} sx={{ borderRadius: 999 }}><ArrowBack /></IconButton>
+          <Avatar src={restaurante?.logoUrl || restaurante?.logoSlug || undefined} sx={{ bgcolor: "rgba(255,255,255,.22)", color: "#fff" }}><Storefront /></Avatar>
           <Box sx={{ flex: 1, minWidth: 0 }}>
             <Typography variant="h6" fontWeight={1000} noWrap>Meus pedidos</Typography>
-            <Typography variant="caption" sx={{ color: "rgba(255,255,255,.72)" }} noWrap>
-              {restaurante?.nome || "Acompanhe seu histórico"}
-            </Typography>
+            <Typography variant="caption" sx={{ color: "rgba(255,255,255,.84)" }} noWrap>{restaurante?.nome || "Movyo Vitrine"}</Typography>
           </Box>
         </Toolbar>
       </AppBar>
 
       <Container sx={{ py: 2.5 }} maxWidth="sm">
-        <Paper elevation={0} sx={{ p: 2, mb: 2.5, borderRadius: 4, border: "1px solid rgba(15,23,42,0.08)" }}>
+        <Paper elevation={0} sx={{ p: 2.2, mb: 2.5, borderRadius: 5, background: "linear-gradient(180deg,#ffffff 0%,#fff8f3 100%)", border: "1px solid rgba(255,122,61,0.16)", boxShadow: "0 14px 36px rgba(255,122,61,0.10)" }}>
           <Stack direction="row" spacing={1.5} alignItems="center" sx={{ mb: 1.5 }}>
-            <Avatar sx={{ bgcolor: "#fff3eb", color: "#ff7a3d" }}>
-              <Storefront />
-            </Avatar>
-            <Box>
-              <Typography fontWeight={1000}>Buscar pedidos</Typography>
-              <Typography variant="body2" color="text.secondary">Use o telefone informado no checkout.</Typography>
+            <Avatar sx={{ background: "linear-gradient(135deg,#ff4b8b,#ff7a3d)", color: "#fff" }}><PhoneIphone /></Avatar>
+            <Box sx={{ flex: 1 }}>
+              <Typography fontWeight={1000}>Acompanhe seus pedidos</Typography>
+              <Typography variant="body2" color="text.secondary">Seu telefone fica salvo para as próximas consultas.</Typography>
             </Box>
           </Stack>
 
-          <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
-            <TextField
-              value={telefoneBusca}
-              onChange={(e) => setTelefoneBusca(onlyDigits(e.target.value).slice(0, 13))}
-              onKeyDown={(e) => { if (e.key === "Enter") buscarPedidos(); }}
-              label="Telefone"
-              placeholder="Ex: 81999999999"
-              fullWidth
-              size="small"
-            />
-            <Button
-              variant="contained"
-              startIcon={loading ? <CircularProgress color="inherit" size={18} /> : <Search />}
-              onClick={() => buscarPedidos()}
-              disabled={loading}
-              sx={{ borderRadius: 2, px: 2.5, fontWeight: 900 }}
-            >
-              Buscar
-            </Button>
-          </Stack>
+          {!editandoTelefone && telefoneAtivo ? (
+            <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={1} sx={{ p: 1.25, borderRadius: 3, bgcolor: "#fff", border: "1px solid rgba(15,23,42,0.08)" }}>
+              <Box>
+                <Typography variant="caption" color="text.secondary" fontWeight={800}>Consultando pelo telefone</Typography>
+                <Typography fontWeight={1000}>{formatTelefone(telefoneAtivo)}</Typography>
+              </Box>
+              <Button startIcon={<Edit />} onClick={() => setEditandoTelefone(true)} sx={{ borderRadius: 999, fontWeight: 900 }}>Alterar</Button>
+            </Stack>
+          ) : (
+            <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
+              <TextField value={formatTelefone(telefoneBusca)} onChange={(e) => setTelefoneBusca(onlyDigits(e.target.value).slice(0, 11))} onKeyDown={(e) => { if (e.key === "Enter") buscarPedidos(); }} label="Telefone" placeholder="Ex: (81) 99999-9999" fullWidth size="small" />
+              <Button variant="contained" startIcon={loading ? <CircularProgress color="inherit" size={18} /> : <Search />} onClick={() => buscarPedidos()} disabled={loading} sx={{ borderRadius: 3, px: 2.5, fontWeight: 1000, background: "linear-gradient(90deg,#ff4b8b,#ff7a3d)" }}>Buscar</Button>
+            </Stack>
+          )}
 
-          {erro && <Alert severity="warning" sx={{ mt: 1.5, borderRadius: 2 }}>{erro}</Alert>}
+          {erro && <Alert severity="warning" sx={{ mt: 1.5, borderRadius: 3 }}>{erro}</Alert>}
         </Paper>
 
         {loading ? (
-          <Stack alignItems="center" sx={{ py: 6 }} spacing={1}>
-            <CircularProgress />
+          <Stack alignItems="center" sx={{ py: 6 }} spacing={1.5}>
+            <CircularProgress sx={{ color: "#ff7a3d" }} />
             <Typography variant="body2" color="text.secondary">Carregando seus pedidos...</Typography>
           </Stack>
         ) : telefoneAtivo && pedidos.length === 0 ? (
-          <Paper elevation={0} sx={{ p: 3, borderRadius: 4, textAlign: "center", border: "1px solid rgba(15,23,42,0.08)" }}>
-            <ReceiptLong sx={{ fontSize: 46, color: "text.secondary", mb: 1 }} />
+          <Paper elevation={0} sx={{ p: 3, borderRadius: 5, textAlign: "center", border: "1px solid rgba(15,23,42,0.08)", bgcolor: "#fff" }}>
+            <ShoppingBag sx={{ fontSize: 50, color: "#ff7a3d", mb: 1 }} />
             <Typography fontWeight={1000}>Nenhum pedido encontrado</Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mt: .5 }}>
-              Confira se o telefone é o mesmo usado na compra.
-            </Typography>
-            <Button variant="outlined" sx={{ mt: 2, borderRadius: 999 }} onClick={voltarLoja}>Voltar para loja</Button>
+            <Typography variant="body2" color="text.secondary" sx={{ mt: .5 }}>Confira se o telefone é o mesmo usado na compra.</Typography>
+            <Button variant="outlined" sx={{ mt: 2, borderRadius: 999, fontWeight: 900 }} onClick={() => setEditandoTelefone(true)}>Alterar telefone</Button>
           </Paper>
         ) : (
           <>
@@ -299,9 +292,7 @@ const PedidosCliente = () => {
               <Chip label={ativos.length} size="small" sx={{ fontWeight: 900 }} />
             </Stack>
 
-            {ativos.length === 0 ? (
-              <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>Nenhum pedido ativo no momento.</Typography>
-            ) : ativos.map(renderPedido)}
+            {ativos.length === 0 ? <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>Nenhum pedido ativo no momento.</Typography> : ativos.map(renderPedido)}
 
             <Divider sx={{ my: 3 }} />
 
@@ -310,15 +301,11 @@ const PedidosCliente = () => {
               <Chip label={concluidos.length} size="small" sx={{ fontWeight: 900 }} />
             </Stack>
 
-            {concluidos.length === 0 ? (
-              <Typography variant="body2" color="text.secondary">Nenhum pedido finalizado ainda.</Typography>
-            ) : concluidos.map(renderPedido)}
+            {concluidos.length === 0 ? <Typography variant="body2" color="text.secondary">Nenhum pedido finalizado ainda.</Typography> : concluidos.map(renderPedido)}
           </>
         )}
 
-        <Button fullWidth variant="contained" sx={{ mt: 3, py: 1.4, borderRadius: 999, fontWeight: 1000 }} onClick={voltarLoja}>
-          Fazer novo pedido
-        </Button>
+        <Button fullWidth variant="contained" sx={{ mt: 3, py: 1.4, borderRadius: 999, fontWeight: 1000, background: "linear-gradient(90deg,#ff4b8b,#ff7a3d)" }} onClick={voltarLoja}>Fazer novo pedido</Button>
       </Container>
     </Box>
   );

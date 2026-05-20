@@ -42,6 +42,7 @@ import StorefrontIcon from "@mui/icons-material/Storefront";
 import ModalProduto from "../components/ModalProduto";
 import axios from "axios";
 import { API_BASE_URL } from "../config";
+import { calcularStatusLoja } from "../utils/horarioLoja";
 
 const DEFAULT_IMAGE_URL =
   "https://cdn-icons-png.flaticon.com/512/1404/1404945.png";
@@ -90,38 +91,6 @@ function syncCartOwnerOrReset(restId) {
   }
 
   localStorage.setItem(CART_OWNER_KEY, restStr);
-}
-
-/**
- * Calcula status "Aberto" / "Fechado"
- * com suporte a horários que viram madrugada (ex: 18:00 -> 02:00).
- */
-function calcularStatusLoja(rest) {
-  const dias = ["domingo", "segunda", "terca", "quarta", "quinta", "sexta", "sabado"];
-  const hoje = new Date();
-  const diaAtual = dias[hoje.getDay()];
-  const horarioHoje = rest?.horariosFuncionamento?.[diaAtual];
-
-  if (!horarioHoje || horarioHoje.fechado) return "Fechado";
-
-  const [abreHora, abreMin] = (horarioHoje.abre || "00:00").split(":").map(Number);
-  const [fechaHora, fechaMin] = (horarioHoje.fecha || "00:00").split(":").map(Number);
-
-  const agora = new Date();
-
-  const horarioAbre = new Date(agora);
-  horarioAbre.setHours(abreHora, abreMin, 0, 0);
-
-  const horarioFecha = new Date(agora);
-  horarioFecha.setHours(fechaHora, fechaMin, 0, 0);
-
-  // Fecha após meia-noite (ex: 18:00 -> 02:00)
-  if (horarioFecha <= horarioAbre) {
-    horarioFecha.setDate(horarioFecha.getDate() + 1);
-    if (agora < horarioAbre) horarioAbre.setDate(horarioAbre.getDate() - 1);
-  }
-
-  return agora >= horarioAbre && agora < horarioFecha ? "Aberto" : "Fechado";
 }
 
 /**
@@ -229,7 +198,7 @@ const Publico = () => {
   const [produtoSelecionado, setProdutoSelecionado] = useState(null);
 
   const [quantidadeCarrinho, setQuantidadeCarrinho] = useState(0);
-  const [statusLoja, setStatusLoja] = useState("Carregando...");
+  const [statusLoja, setStatusLoja] = useState("...");
   const [avisoFechadoOpen, setAvisoFechadoOpen] = useState(false);
   const [avisoMensagem, setAvisoMensagem] = useState("");
   const [loadingProdutos, setLoadingProdutos] = useState(true);
@@ -297,7 +266,7 @@ const Publico = () => {
       if (restauranteLS?._id) syncCartOwnerOrReset(restauranteLS._id);
     } else {
       setRestaurante(null);
-      setStatusLoja("Carregando...");
+      setStatusLoja("...");
     }
 
     const fetchTudo = async () => {
@@ -358,10 +327,20 @@ const Publico = () => {
           console.warn("Não foi possível sincronizar preços pela rota /produtos:", precoErr);
         }
 
-        localStorage.setItem("restauranteSelecionado", JSON.stringify(restauranteFresh));
+        let restauranteComHorario = restauranteFresh;
+        try {
+          if (restauranteFresh?._id) {
+            const horarioRes = await axios.get(`${API_URL}/restaurantes/horario/${restauranteFresh._id}`);
+            restauranteComHorario = { ...restauranteFresh, ...(horarioRes.data || {}) };
+          }
+        } catch (horarioErr) {
+          console.warn("Não foi possível sincronizar horário público:", horarioErr);
+        }
 
-        setRestaurante(restauranteFresh);
-        setStatusLoja(calcularStatusLoja(restauranteFresh));
+        localStorage.setItem("restauranteSelecionado", JSON.stringify(restauranteComHorario));
+
+        setRestaurante(restauranteComHorario);
+        setStatusLoja(calcularStatusLoja(restauranteComHorario));
 
         const categoriasBase = (produtosPorCategoria || []).filter((cat) => cat.ativa !== false);
 
@@ -717,7 +696,7 @@ const Publico = () => {
                 noWrap
                 sx={{ color: "#fff", overflow: "hidden", textOverflow: "ellipsis" }}
               >
-                {restaurante?.nome || "Carregando..."}
+                {restaurante?.nome || "Movyo"}
               </Typography>
 
               {!headerCompacto && restaurante?.enderecoBairro && (
@@ -731,7 +710,7 @@ const Publico = () => {
 
           <Chip
             icon={<AccessTimeIcon fontSize="small" />}
-            label={statusLoja}
+            label={statusLoja === "..." ? "Verificando" : statusLoja}
             size="small"
             sx={{
               bgcolor: lojaAberta ? "#2e7d32" : "#c62828",
@@ -1357,7 +1336,7 @@ const Publico = () => {
       <Paper elevation={10} sx={{ position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 1000 }}>
         <BottomNavigation showLabels>
           <BottomNavigationAction label="Início" icon={<HomeIcon />} onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })} />
-          <BottomNavigationAction label="Pedidos" icon={<ListAltIcon />} onClick={() => navigate(`/p/meus-pedidos/${localStorage.getItem("telefoneCliente") || ""}`)} />
+          <BottomNavigationAction label="Pedidos" icon={<ListAltIcon />} onClick={() => { const tel = localStorage.getItem("telefoneCliente") || ""; navigate(tel ? `/p/meus-pedidos/${tel}` : "/p/meus-pedidos"); }} />
           <BottomNavigationAction
             label="Carrinho"
             icon={
