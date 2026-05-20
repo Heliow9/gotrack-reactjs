@@ -60,7 +60,7 @@ const MP_PUBLIC_KEY = String(import.meta.env.VITE_MP_PUBLIC_KEY || "").trim();
 const LS_CLIENT_PHONE_KEY = "cliente_telefone";
 const DEFAULT_IMAGE_URL = "";
 
-const PIX_STATUS_URL = `${API}/publico/status`;
+const PIX_STATUS_URL = `${API}/publico/mercadopago/pix/status`;
 const MP_STATUS_PUBLICO_URL = `${API}/mercadopago/status`;
 const RESTAURANTE_PUBLICO_URL = `${API}/restaurantes/publico`;
 
@@ -780,10 +780,10 @@ const Checkout = () => {
         setVerificandoPix(true);
         const st = await consultarStatusPix(pedidoId);
 
-        const status = st?.status || st?.payment_status || st?.statusPagamento || null;
+        const status = st?.statusPagamento || st?.payment_status || st?.status || null;
         if (status) setPixStatus(status);
 
-        if (status === "approved" || status === "pago" || status === "paid") {
+        if (st?.pago || status === "approved" || status === "pago" || status === "paid") {
           limparPollingPix();
           setVerificandoPix(false);
 
@@ -823,7 +823,7 @@ const Checkout = () => {
   const cancelarPix = async () => {
     const id = resumoPedido?._id;
     try {
-      if (id) await axios.post(`${API}/pedidos/${id}/cancelar`).catch(() => {});
+      if (id) await axios.post(`${API}/publico/pedidos/${id}/cancelar-pix`).catch(() => {});
     } catch {
       // ignore
     } finally {
@@ -848,7 +848,7 @@ const Checkout = () => {
     try {
       setVerificandoPix(true);
       const st = await consultarStatusPix(id);
-      const status = st?.status || st?.payment_status || st?.statusPagamento || null;
+      const status = st?.statusPagamento || st?.payment_status || st?.status || null;
       if (status) setPixStatus(status);
     } catch {
       // ignore
