@@ -877,84 +877,81 @@ const Publico = () => {
         </Box>
       </Box>
 
-      {/* ✅ DESTAQUES FORA DO STICKY */}
+      {/* ✅ DESTAQUES PREMIUM FORA DO STICKY */}
       {!loadingProdutos && destaques.length > 0 && (
-        <Box sx={{ pt: 1.2, pb: 1.2 }}>
-          <Box sx={{ px: 2, mb: 0.8, display: "flex", alignItems: "center", gap: 1 }}>
-            <Chip
-              icon={<StarIcon sx={{ color: "#fff !important" }} fontSize="small" />}
-              label="Destaques"
-              size="small"
+        <Box sx={{ px: 2, pt: 1.4, pb: 1.8 }}>
+          <Paper
+            elevation={0}
+            sx={{
+              position: "relative",
+              overflow: "hidden",
+              borderRadius: 4,
+              p: { xs: 1.4, sm: 2 },
+              background:
+                "radial-gradient(circle at 12% 0%, rgba(255,122,61,0.22), transparent 34%), linear-gradient(135deg, #111827 0%, #1f2937 54%, #ff7a3d 145%)",
+              boxShadow: "0 18px 45px rgba(15,23,42,0.18)",
+              color: "#fff",
+            }}
+          >
+            <Box
               sx={{
-                bgcolor: "#111827",
-                color: "#fff",
-                fontWeight: 900,
-                borderRadius: "999px",
+                position: "absolute",
+                inset: 0,
+                pointerEvents: "none",
+                background:
+                  "linear-gradient(90deg, rgba(255,255,255,0.08) 0 1px, transparent 1px), linear-gradient(0deg, rgba(255,255,255,0.06) 0 1px, transparent 1px)",
+                backgroundSize: "34px 34px",
+                opacity: 0.32,
               }}
             />
 
-            <Box sx={{ minWidth: 0 }}>
-              <Typography variant="caption" sx={{ color: "text.secondary", fontWeight: 800, display: "block" }}>
-                Próximo em {destaqueCountdown}s
+            <Box sx={{ position: "relative", display: "flex", alignItems: "center", gap: 1, mb: 1.25 }}>
+              <Chip
+                icon={<StarIcon sx={{ color: "#111827 !important" }} fontSize="small" />}
+                label="Mais pedidos da casa"
+                size="small"
+                sx={{
+                  bgcolor: "#fde68a",
+                  color: "#111827",
+                  fontWeight: 1000,
+                  borderRadius: "999px",
+                }}
+              />
+
+              <Typography variant="caption" sx={{ color: "rgba(255,255,255,0.78)", fontWeight: 800 }}>
+                {destaques.length} destaque{destaques.length > 1 ? "s" : ""}
               </Typography>
 
-              <Box
-                sx={{
-                  mt: 0.4,
-                  width: 140,
-                  height: 6,
-                  borderRadius: 999,
-                  bgcolor: "rgba(0,0,0,0.08)",
-                  overflow: "hidden",
-                }}
-              >
+              <Box sx={{ ml: "auto", display: "flex", alignItems: "center", gap: 0.5 }}>
                 <Box
                   sx={{
-                    height: "100%",
-                    width: `${progressPct}%`,
-                    bgcolor: "#ff7a3d",
+                    display: { xs: "none", sm: "block" },
+                    width: 92,
+                    height: 5,
                     borderRadius: 999,
-                    transition: "width 300ms linear",
+                    bgcolor: "rgba(255,255,255,0.22)",
+                    overflow: "hidden",
                   }}
-                />
+                >
+                  <Box
+                    sx={{
+                      height: "100%",
+                      width: `${progressPct}%`,
+                      bgcolor: "#fde68a",
+                      borderRadius: 999,
+                      transition: "width 300ms linear",
+                    }}
+                  />
+                </Box>
+                <IconButton onClick={scrollDestaquesLeft} size="small" aria-label="Destaques anteriores" sx={{ color: "#fff" }}>
+                  <ArrowBackIosNewIcon fontSize="small" />
+                </IconButton>
+                <IconButton onClick={scrollDestaquesRight} size="small" aria-label="Próximos destaques" sx={{ color: "#fff" }}>
+                  <ArrowForwardIosIcon fontSize="small" />
+                </IconButton>
               </Box>
             </Box>
 
-            <Box sx={{ ml: "auto", display: "flex", gap: 0.5 }}>
-              <IconButton onClick={scrollDestaquesLeft} size="small" aria-label="Destaques anteriores">
-                <ArrowBackIosNewIcon fontSize="small" />
-              </IconButton>
-              <IconButton onClick={scrollDestaquesRight} size="small" aria-label="Próximos destaques">
-                <ArrowForwardIosIcon fontSize="small" />
-              </IconButton>
-            </Box>
-          </Box>
-
-          {/* Wrapper com gradiente lateral */}
-          <Box
-            sx={{
-              position: "relative",
-              "&:before, &:after": {
-                content: '""',
-                position: "absolute",
-                top: 0,
-                bottom: 0,
-                width: 32,
-                zIndex: 3,
-                pointerEvents: "none",
-              },
-              "&:before": {
-                left: 0,
-                background:
-                  "linear-gradient(90deg, rgba(245,245,247,1) 0%, rgba(245,245,247,0) 100%)",
-              },
-              "&:after": {
-                right: 0,
-                background:
-                  "linear-gradient(270deg, rgba(245,245,247,1) 0%, rgba(245,245,247,0) 100%)",
-              },
-            }}
-          >
             <Box
               ref={destaquesScrollRef}
               onPointerDown={() => (isDraggingDestaquesRef.current = true)}
@@ -962,22 +959,21 @@ const Publico = () => {
               onPointerCancel={() => (isDraggingDestaquesRef.current = false)}
               onPointerLeave={() => (isDraggingDestaquesRef.current = false)}
               sx={{
-                px: 2,
+                position: "relative",
                 overflowX: "auto",
-                display: "flex",
+                display: "grid",
+                gridAutoFlow: "column",
+                gridAutoColumns: { xs: "82%", sm: 300, md: 330 },
                 gap: 1.25,
                 scrollbarWidth: "none",
                 "&::-webkit-scrollbar": { display: "none" },
                 scrollSnapType: "x mandatory",
-                scrollPaddingLeft: 16,
-                scrollPaddingRight: 16,
                 WebkitOverflowScrolling: "touch",
               }}
             >
-              {destaques.map(({ item, categoria }) => {
+              {destaques.map(({ item, categoria }, idx) => {
                 const categoriaType = inferCategoriaType(categoria, item);
                 const precoLabel = getPrecoLabel(item, categoria, categoriaType);
-                const cardWidth = isMobile ? "calc(100% - 64px)" : 320;
 
                 return (
                   <Paper
@@ -987,111 +983,123 @@ const Publico = () => {
                     elevation={0}
                     sx={{
                       scrollSnapAlign: "center",
-                      scrollSnapStop: "always",
-                      flexShrink: 0,
-                      width: cardWidth,
-                      borderRadius: 2.5,
                       overflow: "hidden",
-                      border: "1px solid rgba(0,0,0,0.06)",
-                      bgcolor: "#fff",
-                      cursor: "pointer",
-                      transition: "transform 120ms ease, box-shadow 120ms ease",
-                      "&:hover": {
-                        transform: "translateY(-1px)",
-                        boxShadow: "0 10px 25px rgba(2,6,23,0.06)",
-                      },
-                      ...(lojaAberta ? {} : { opacity: 0.72, cursor: "not-allowed" }),
+                      borderRadius: 3,
+                      bgcolor: "rgba(255,255,255,0.98)",
+                      cursor: lojaAberta ? "pointer" : "not-allowed",
+                      border: "1px solid rgba(255,255,255,0.32)",
+                      transition: "transform 140ms ease, box-shadow 140ms ease",
+                      "&:hover": lojaAberta
+                        ? { transform: "translateY(-2px)", boxShadow: "0 20px 38px rgba(0,0,0,0.20)" }
+                        : {},
+                      ...(lojaAberta ? {} : { opacity: 0.68 }),
                     }}
                   >
-                    <Box sx={{ display: "flex", gap: 1.25, p: 1.25 }}>
-                      <Avatar
+                    <Box sx={{ position: "relative", height: 132, bgcolor: "#fff4ed" }}>
+                      <Box
+                        component="img"
                         src={item.imagem || DEFAULT_IMAGE_URL}
                         alt={item.nome}
-                        variant="rounded"
+                        sx={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                      />
+                      <Chip
+                        size="small"
+                        label={`#${idx + 1}`}
                         sx={{
-                          width: 72,
-                          height: 72,
-                          borderRadius: 2,
-                          bgcolor: "#fff",
-                          flexShrink: 0,
+                          position: "absolute",
+                          top: 10,
+                          left: 10,
+                          bgcolor: "rgba(17,24,39,0.88)",
+                          color: "#fff",
+                          fontWeight: 1000,
+                          borderRadius: "999px",
                         }}
                       />
+                      <Chip
+                        size="small"
+                        icon={<StarIcon sx={{ color: "#111827 !important" }} fontSize="small" />}
+                        label="Destaque"
+                        sx={{
+                          position: "absolute",
+                          right: 10,
+                          bottom: 10,
+                          bgcolor: "#fde68a",
+                          color: "#111827",
+                          fontWeight: 1000,
+                          borderRadius: "999px",
+                        }}
+                      />
+                    </Box>
 
-                      <Box sx={{ minWidth: 0, flex: 1 }}>
-                        <Typography
-                          fontWeight={1000}
-                          sx={{
-                            fontSize: "0.95rem",
-                            lineHeight: 1.2,
-                            overflow: "hidden",
-                            textOverflow: "ellipsis",
-                            whiteSpace: "nowrap",
-                          }}
-                        >
-                          {item.nome}
-                        </Typography>
+                    <Box sx={{ p: 1.35 }}>
+                      <Typography
+                        fontWeight={1000}
+                        sx={{
+                          color: "#111827",
+                          fontSize: "1rem",
+                          lineHeight: 1.18,
+                          display: "-webkit-box",
+                          WebkitLineClamp: 2,
+                          WebkitBoxOrient: "vertical",
+                          overflow: "hidden",
+                          minHeight: 38,
+                        }}
+                      >
+                        {item.nome}
+                      </Typography>
 
-                        <Typography
-                          variant="caption"
-                          sx={{
-                            color: "text.secondary",
-                            display: "-webkit-box",
-                            WebkitLineClamp: 2,
-                            WebkitBoxOrient: "vertical",
-                            overflow: "hidden",
-                            mt: 0.3,
-                          }}
-                        >
-                          {item.descricao || categoria?.nome || ""}
-                        </Typography>
+                      <Typography
+                        variant="caption"
+                        sx={{
+                          color: "#64748b",
+                          display: "-webkit-box",
+                          WebkitLineClamp: 2,
+                          WebkitBoxOrient: "vertical",
+                          overflow: "hidden",
+                          mt: 0.45,
+                          minHeight: 34,
+                        }}
+                      >
+                        {item.descricao || categoria?.nome || "Especial da casa"}
+                      </Typography>
 
-                        <Stack direction="row" alignItems="center" spacing={1} sx={{ mt: 0.8 }}>
-                          <Typography variant="body2" color="primary" fontWeight={1000}>
-                            {precoLabel}
+                      <Stack direction="row" alignItems="center" spacing={1} sx={{ mt: 1.2 }}>
+                        <Box sx={{ flex: 1, minWidth: 0 }}>
+                          <Typography variant="caption" sx={{ color: "#94a3b8", fontWeight: 900, display: "block" }}>
+                            A partir de
                           </Typography>
-
-                          <Chip
-                            size="small"
-                            icon={<StarIcon sx={{ color: "#111827 !important" }} fontSize="small" />}
-                            label="Destaque"
-                            sx={{
-                              height: 22,
-                              borderRadius: "999px",
-                              bgcolor: "rgba(250,204,21,0.22)",
-                              fontWeight: 900,
-                            }}
-                          />
-                        </Stack>
-
-                        <Box sx={{ mt: 1 }}>
-                          <Button
-                            size="small"
-                            variant="outlined"
-                            startIcon={<AddShoppingCartIcon fontSize="small" />}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              abrirModalProduto(item, categoria);
-                            }}
-                            disabled={!lojaAberta}
-                            sx={{
-                              borderRadius: "999px",
-                              textTransform: "none",
-                              borderColor: "#ff7a3d55",
-                              color: "#ff7a3d",
-                              fontWeight: 900,
-                              "&:hover": { borderColor: "#ff7a3d", backgroundColor: "#fff7f2" },
-                            }}
-                          >
-                            Adicionar
-                          </Button>
+                          <Typography color="primary" fontWeight={1000} sx={{ fontSize: "1rem" }}>
+                            {precoLabel.replace("a partir de ", "")}
+                          </Typography>
                         </Box>
-                      </Box>
+
+                        <Button
+                          size="small"
+                          variant="contained"
+                          startIcon={<AddShoppingCartIcon fontSize="small" />}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            abrirModalProduto(item, categoria);
+                          }}
+                          disabled={!lojaAberta}
+                          sx={{
+                            borderRadius: "999px",
+                            textTransform: "none",
+                            bgcolor: "#ff7a3d",
+                            fontWeight: 1000,
+                            boxShadow: "0 10px 22px rgba(255,122,61,0.28)",
+                            "&:hover": { bgcolor: "#ff6b2a" },
+                          }}
+                        >
+                          Pedir
+                        </Button>
+                      </Stack>
                     </Box>
                   </Paper>
                 );
               })}
             </Box>
-          </Box>
+          </Paper>
         </Box>
       )}
 

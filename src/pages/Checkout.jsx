@@ -914,6 +914,11 @@ const Checkout = () => {
         valorTotal,
         restaurante: restaurante._id,
         formadePagamento: "Pix",
+        formaPagamento: "pix",
+        metodoPagamento: "pix",
+        statusPagamento: "aguardando_pagamento",
+        statusPedido: "aguardando_pagamento",
+        status: "aguardando_pagamento",
         origem: "vitrine",
         valorFrete,
       });
@@ -1070,6 +1075,11 @@ const Checkout = () => {
         valorTotal,
         restaurante: restaurante._id,
         formadePagamento: "CartaoCredito",
+        formaPagamento: "cartao",
+        metodoPagamento: "cartao",
+        statusPagamento: "aguardando_pagamento",
+        statusPedido: "aguardando_pagamento",
+        status: "aguardando_pagamento",
         origem: "vitrine",
         valorFrete,
         mpCard: {
