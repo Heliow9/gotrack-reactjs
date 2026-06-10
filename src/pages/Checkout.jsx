@@ -162,6 +162,9 @@ const Checkout = () => {
 
   // frete visual
   const [frete, setFrete] = useState(0);
+  const [entregaDisponivel, setEntregaDisponivel] = useState(null); // null = ainda não validado
+  const [entregaMensagem, setEntregaMensagem] = useState("");
+  const [validandoEntrega, setValidandoEntrega] = useState(false);
 
   // congela frete no cartão
   const [freteCongelado, setFreteCongelado] = useState(null);
@@ -613,20 +616,72 @@ const Checkout = () => {
     throw new Error("Endereço não localizado");
   };
 
-  // ===== Frete =====
+  // ===== Frete / área de entrega =====
+  const enderecoCompleto = useMemo(() => {
+    return Boolean(endereco.rua && endereco.numero && endereco.bairro && endereco.cidade && endereco.estado);
+  }, [endereco.rua, endereco.numero, endereco.bairro, endereco.cidade, endereco.estado]);
+
+  const resetEntrega = (mensagem = "") => {
+    setFrete(0);
+    setEntregaDisponivel(null);
+    setEntregaMensagem(mensagem);
+    setFreteCongelado(null);
+    setLatLngCongelado(null);
+    setCardAmountLocked(null);
+    setBrickFatalMsg("");
+    brickRetryRef.current = 0;
+  };
+
+  const setEntregaIndisponivel = (mensagem) => {
+    setFrete(0);
+    setEntregaDisponivel(false);
+    setEntregaMensagem(mensagem || "Não temos entrega disponível para este endereço.");
+    setFormaPagamento("Pix");
+    setFreteCongelado(null);
+    setLatLngCongelado(null);
+    setCardAmountLocked(null);
+    setBrickFatalMsg("");
+    brickRetryRef.current = 0;
+  };
+
+  const normalizarCoordenadasArea = (coordenadas) => {
+    if (!Array.isArray(coordenadas) || coordenadas.length < 3) return null;
+
+    // Turf espera Polygon como [[[lng,lat], [lng,lat]...]].
+    // Aceita tanto a área já fechada em anel quanto um array simples de pontos.
+    let ring = Array.isArray(coordenadas[0]?.[0]) ? coordenadas[0] : coordenadas;
+    ring = ring
+      .map((p) => [Number(p?.[0]), Number(p?.[1])])
+      .filter(([lng, lat]) => Number.isFinite(lng) && Number.isFinite(lat));
+
+    if (ring.length < 3) return null;
+    const first = ring[0];
+    const last = ring[ring.length - 1];
+    if (first[0] !== last[0] || first[1] !== last[1]) ring = [...ring, first];
+    return [ring];
+  };
+
   const calcularFrete = async (lng, lat) => {
     try {
       const res = await axios.get(`${API}/frete/dados/${restaurante._id}`);
-      const { areas = [], faixasRaio = [], localizacaoRestaurante } = res.data;
+      const { areas = [], faixasRaio = [], localizacaoRestaurante } = res.data || {};
 
       const pontoCliente = turf.point([lng, lat]);
+      const temAreas = Array.isArray(areas) && areas.length > 0;
+      const temFaixasRaio = Array.isArray(faixasRaio) && faixasRaio.length > 0;
 
-      if (Array.isArray(areas) && areas.length > 0) {
+      if (temAreas) {
         for (const area of areas) {
-          if (!area?.coordenadas) continue;
-          const poligono = turf.polygon(area.coordenadas);
+          const coordenadas = normalizarCoordenadasArea(area?.coordenadas);
+          if (!coordenadas) continue;
+          const poligono = turf.polygon(coordenadas);
           if (turf.booleanPointInPolygon(pontoCliente, poligono)) {
-            return area.valor || 0;
+            return {
+              disponivel: true,
+              valor: Number(area.valor || 0),
+              tipo: "area",
+              mensagem: "Entrega disponível para este endereço.",
+            };
           }
         }
       }
@@ -635,18 +690,52 @@ const Checkout = () => {
         localizacaoRestaurante &&
         typeof localizacaoRestaurante.longitude === "number" &&
         typeof localizacaoRestaurante.latitude === "number" &&
-        Array.isArray(faixasRaio) &&
-        faixasRaio.length > 0
+        temFaixasRaio
       ) {
         const pontoRestaurante = turf.point([localizacaoRestaurante.longitude, localizacaoRestaurante.latitude]);
-        const distanciaKm = turf.distance(pontoRestaurante, pontoCliente);
-        const faixa = faixasRaio.find((f) => distanciaKm <= f.ate);
-        return faixa ? faixa.valor || 0 : 0;
+        const distanciaKm = turf.distance(pontoRestaurante, pontoCliente, { units: "kilometers" });
+
+        const faixasOrdenadas = [...faixasRaio]
+          .map((f) => ({ ...f, ate: Number(f?.ate), valor: Number(f?.valor || 0) }))
+          .filter((f) => Number.isFinite(f.ate))
+          .sort((a, b) => a.ate - b.ate);
+
+        const faixa = faixasOrdenadas.find((f) => distanciaKm <= f.ate);
+        if (faixa) {
+          return {
+            disponivel: true,
+            valor: Number(faixa.valor || 0),
+            tipo: "raio",
+            distanciaKm,
+            mensagem: `Entrega disponível para este endereço (${distanciaKm.toFixed(1)} km).`,
+          };
+        }
       }
 
-      return 0;
-    } catch {
-      return 0;
+      // Se o restaurante configurou raio/área e o endereço não bateu, bloqueia pagamento.
+      if (temAreas || temFaixasRaio) {
+        return {
+          disponivel: false,
+          valor: 0,
+          tipo: temAreas ? "area" : "raio",
+          mensagem: "Não temos entrega disponível para este endereço.",
+        };
+      }
+
+      // Compatibilidade: restaurantes sem configuração de frete continuam funcionando.
+      return {
+        disponivel: true,
+        valor: 0,
+        tipo: "sem_configuracao",
+        mensagem: "Entrega disponível.",
+      };
+    } catch (e) {
+      return {
+        disponivel: false,
+        valor: 0,
+        tipo: "erro",
+        mensagem: "Não foi possível validar a entrega para este endereço. Confira o endereço e tente novamente.",
+      };
     }
   };
 
@@ -654,14 +743,28 @@ const Checkout = () => {
   useEffect(() => {
     const calcularFreteEndereco = async () => {
       if (!restaurante?._id) return;
-      if (!endereco.rua || !endereco.numero || !endereco.bairro || !endereco.cidade || !endereco.estado) return;
+      if (!enderecoCompleto) {
+        resetEntrega("");
+        return;
+      }
 
+      setValidandoEntrega(true);
       try {
         const [lng, lat] = await geocodificarEndereco();
-        const valorFrete = await calcularFrete(lng, lat);
-        setFrete(valorFrete);
+        const resultado = await calcularFrete(lng, lat);
+
+        if (!resultado.disponivel) {
+          setEntregaIndisponivel(resultado.mensagem);
+          return;
+        }
+
+        setFrete(Number(resultado.valor || 0));
+        setEntregaDisponivel(true);
+        setEntregaMensagem(resultado.mensagem || "Entrega disponível para este endereço.");
       } catch {
-        setFrete(0);
+        setEntregaIndisponivel("Não foi possível localizar este endereço. Confira rua, número, bairro, cidade e UF.");
+      } finally {
+        setValidandoEntrega(false);
       }
     };
 
@@ -676,13 +779,14 @@ const Checkout = () => {
     restaurante?._id,
     pixAtivo,
     isCard,
+    enderecoCompleto,
   ]);
 
   // Endereço seleção
   const handleEnderecoChange = (index) => {
     setEnderecoSelecionado(index);
     setEndereco(enderecosCliente[index]);
-    setFrete(0);
+    resetEntrega("");
 
     // se trocar endereço, limpa locks do cartão
     setFreteCongelado(null);
@@ -704,7 +808,7 @@ const Checkout = () => {
       cep: "",
       complemento: "",
     });
-    setFrete(0);
+    resetEntrega("");
     setFreteCongelado(null);
     setLatLngCongelado(null);
     setCardAmountLocked(null);
@@ -737,7 +841,14 @@ const Checkout = () => {
       const coords = await geocodificarEndereco();
       lng = coords[0];
       lat = coords[1];
-      valorFrete = await calcularFrete(lng, lat);
+      const resultadoFrete = await calcularFrete(lng, lat);
+      if (!resultadoFrete.disponivel) {
+        setEntregaIndisponivel(resultadoFrete.mensagem);
+        throw new Error(resultadoFrete.mensagem || "Não temos entrega disponível para este endereço.");
+      }
+      valorFrete = Number(resultadoFrete.valor || 0);
+      setEntregaDisponivel(true);
+      setEntregaMensagem(resultadoFrete.mensagem || "Entrega disponível para este endereço.");
     }
 
     const valorTotalBase = valorProdutos + valorFrete;
@@ -893,6 +1004,10 @@ const Checkout = () => {
       toast("warning", "Pix indisponível: o restaurante não está conectado ao Mercado Pago.");
       return;
     }
+    if (enderecoCompleto && entregaDisponivel === false) {
+      toast("warning", entregaMensagem || "Não temos entrega disponível para este endereço.");
+      return;
+    }
 
     setCarregando(true);
     try {
@@ -993,6 +1108,11 @@ const Checkout = () => {
   // ===== CARTÃO: prepara + trava amount =====
   const prepararCartao = async () => {
     if (!cartaoDisponivel) return;
+    if (enderecoCompleto && entregaDisponivel === false) {
+      toast("warning", entregaMensagem || "Não temos entrega disponível para este endereço.");
+      setFormaPagamento("Pix");
+      return;
+    }
 
     setBrickFatalMsg("");
     brickRetryRef.current = 0;
@@ -1052,6 +1172,10 @@ const Checkout = () => {
   const finalizarCartao = async ({ token, payment_method_id, issuer_id, installments, payer }) => {
     if (!cartaoDisponivel) {
       toast("warning", "Cartão indisponível para esta loja.");
+      return;
+    }
+    if (enderecoCompleto && entregaDisponivel === false) {
+      toast("warning", entregaMensagem || "Não temos entrega disponível para este endereço.");
       return;
     }
 
@@ -1176,8 +1300,11 @@ const Checkout = () => {
   const resumoMostrado = resumoOpen ? resumoItens : resumoItens.slice(0, maxResumo);
   const temMaisResumo = resumoItens.length > maxResumo;
 
+  const pagamentoBloqueadoPorEntrega = enderecoCompleto && entregaDisponivel === false;
+  const aguardandoValidacaoEntrega = enderecoCompleto && validandoEntrega;
+
   // total base (Pix)
-  const totalPreviewCalculado = subtotalPreview + frete;
+  const totalPreviewCalculado = subtotalPreview + (entregaDisponivel === false ? 0 : frete);
 
   const cardFeeValue = useMemo(() => {
     if (!isCard) return 0;
@@ -1199,6 +1326,7 @@ const Checkout = () => {
     mpInited &&
     !isInIframe &&
     !cardPreparing &&
+    !pagamentoBloqueadoPorEntrega &&
     Number(cardAmountLocked || 0) > 0 &&
     !brickFatalMsg;
 
@@ -1425,8 +1553,17 @@ const Checkout = () => {
           ))}
 
           <Typography variant="body2" color="success.main" sx={{ mt: 1, fontWeight: 600 }}>
-            Frete estimado: R$ {money(frete)}
+            {validandoEntrega ? "Validando entrega..." : `Frete estimado: R$ ${money(frete)}`}
           </Typography>
+
+          {enderecoCompleto && entregaMensagem && (
+            <Alert
+              severity={entregaDisponivel === false ? "warning" : "success"}
+              sx={{ mt: 1.5, borderRadius: 2 }}
+            >
+              {entregaMensagem}
+            </Alert>
+          )}
 
           {/* RESUMO */}
           {itensPreview.length > 0 && (
@@ -1532,6 +1669,12 @@ const Checkout = () => {
                     Forma de Pagamento
                   </Typography>
 
+                  {pagamentoBloqueadoPorEntrega && (
+                    <Alert severity="warning" sx={{ mb: 1.5, borderRadius: 2 }}>
+                      {entregaMensagem || "Não temos entrega disponível para este endereço."}
+                    </Alert>
+                  )}
+
                   {!pagamentosCarregados ? (
                     <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: 1, mt: 0.5 }}>
                       <CircularProgress size={16} />
@@ -1544,6 +1687,11 @@ const Checkout = () => {
                       value={formaPagamento}
                       onChange={async (e) => {
                         const v = e.target.value;
+
+                        if (pagamentoBloqueadoPorEntrega) {
+                          toast("warning", entregaMensagem || "Não temos entrega disponível para este endereço.");
+                          return;
+                        }
 
                         if (String(v).toLowerCase() === "cartaocredito") {
                           if (!cartaoDisponivel) {
@@ -1624,7 +1772,7 @@ const Checkout = () => {
                       <Button
                         variant="contained"
                         onClick={finalizarPix}
-                        disabled={carregando || !pagamentosCarregados || !pixDisponivel}
+                        disabled={carregando || !pagamentosCarregados || !pixDisponivel || pagamentoBloqueadoPorEntrega || aguardandoValidacaoEntrega}
                         sx={{
                           textTransform: "none",
                           fontWeight: 900,
