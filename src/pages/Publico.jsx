@@ -118,6 +118,16 @@ function parseMoney(value) {
   return 0;
 }
 
+
+function isProdutoDestaque(item = {}) {
+  const value = item?.destaque ?? item?.emDestaque ?? item?.isDestaque ?? item?.destaqueVitrine;
+  if (value === true || value === 1) return true;
+  if (typeof value === "string") {
+    return ["true", "1", "sim", "yes", "s"].includes(value.trim().toLowerCase());
+  }
+  return false;
+}
+
 function getItemBasePrice(item = {}) {
   return parseMoney(
     item.precoBase ??
@@ -323,6 +333,7 @@ const Publico = () => {
                 return {
                   ...item,
                   ...completo,
+                  destaque: isProdutoDestaque(completo) || isProdutoDestaque(item),
                   categoriaType: item.categoriaType || cat.tipo || completo.categoriaType,
                   pizzaMultisabor: item.pizzaMultisabor ?? cat.pizzaMultisabor ?? completo.pizzaMultisabor,
                   calculoPrecoPor: item.calculoPrecoPor || cat.calculoPrecoPor || completo.calculoPrecoPor,
@@ -359,6 +370,7 @@ const Publico = () => {
           itens: (cat.itens || [])
             .map((prod) => ({
               ...prod,
+              destaque: isProdutoDestaque(prod),
               precoBase: getItemBasePrice(prod),
               preco: getItemBasePrice(prod),
             }))
@@ -420,11 +432,7 @@ const Publico = () => {
 
     for (const cat of produtosRaw || []) {
       for (const item of cat.itens || []) {
-        const isDestaque =
-          item?.destaque === true ||
-          item?.destaque === "true" ||
-          item?.destaque === 1 ||
-          item?.destaque === "1";
+        const isDestaque = isProdutoDestaque(item);
 
         if (!isDestaque) continue;
 
@@ -879,17 +887,17 @@ const Publico = () => {
 
       {/* ✅ DESTAQUES PREMIUM FORA DO STICKY */}
       {!loadingProdutos && destaques.length > 0 && (
-        <Box sx={{ px: 2, pt: 1.4, pb: 1.8 }}>
+        <Box sx={{ px: 2, pt: 1, pb: 1.2 }}>
           <Paper
             elevation={0}
             sx={{
               position: "relative",
               overflow: "hidden",
-              borderRadius: 4,
-              p: { xs: 1.4, sm: 2 },
+              borderRadius: 3,
+              p: { xs: 1, sm: 1.25 },
               background:
-                "radial-gradient(circle at 12% 0%, rgba(255,122,61,0.22), transparent 34%), linear-gradient(135deg, #111827 0%, #1f2937 54%, #ff7a3d 145%)",
-              boxShadow: "0 18px 45px rgba(15,23,42,0.18)",
+                "radial-gradient(circle at 10% 0%, rgba(255,122,61,0.18), transparent 30%), linear-gradient(135deg, #111827 0%, #1f2937 62%, #ff7a3d 150%)",
+              boxShadow: "0 12px 30px rgba(15,23,42,0.14)",
               color: "#fff",
             }}
           >
@@ -905,7 +913,7 @@ const Publico = () => {
               }}
             />
 
-            <Box sx={{ position: "relative", display: "flex", alignItems: "center", gap: 1, mb: 1.25 }}>
+            <Box sx={{ position: "relative", display: "flex", alignItems: "center", gap: 0.75, mb: 0.9 }}>
               <Chip
                 icon={<StarIcon sx={{ color: "#111827 !important" }} fontSize="small" />}
                 label="Mais pedidos da casa"
@@ -995,7 +1003,7 @@ const Publico = () => {
                       ...(lojaAberta ? {} : { opacity: 0.68 }),
                     }}
                   >
-                    <Box sx={{ position: "relative", height: 132, bgcolor: "#fff4ed" }}>
+                    <Box sx={{ position: "relative", height: 92, bgcolor: "#fff4ed" }}>
                       <Box
                         component="img"
                         src={item.imagem || DEFAULT_IMAGE_URL}
@@ -1031,18 +1039,18 @@ const Publico = () => {
                       />
                     </Box>
 
-                    <Box sx={{ p: 1.35 }}>
+                    <Box sx={{ p: 1 }}>
                       <Typography
                         fontWeight={1000}
                         sx={{
                           color: "#111827",
-                          fontSize: "1rem",
-                          lineHeight: 1.18,
+                          fontSize: "0.88rem",
+                          lineHeight: 1.12,
                           display: "-webkit-box",
                           WebkitLineClamp: 2,
                           WebkitBoxOrient: "vertical",
                           overflow: "hidden",
-                          minHeight: 38,
+                          minHeight: 30,
                         }}
                       >
                         {item.nome}
@@ -1057,18 +1065,18 @@ const Publico = () => {
                           WebkitBoxOrient: "vertical",
                           overflow: "hidden",
                           mt: 0.45,
-                          minHeight: 34,
+                          minHeight: 28,
                         }}
                       >
                         {item.descricao || categoria?.nome || "Especial da casa"}
                       </Typography>
 
-                      <Stack direction="row" alignItems="center" spacing={1} sx={{ mt: 1.2 }}>
+                      <Stack direction="row" alignItems="center" spacing={0.75} sx={{ mt: 0.85 }}>
                         <Box sx={{ flex: 1, minWidth: 0 }}>
                           <Typography variant="caption" sx={{ color: "#94a3b8", fontWeight: 900, display: "block" }}>
                             A partir de
                           </Typography>
-                          <Typography color="primary" fontWeight={1000} sx={{ fontSize: "1rem" }}>
+                          <Typography color="primary" fontWeight={1000} sx={{ fontSize: "0.92rem" }}>
                             {precoLabel.replace("a partir de ", "")}
                           </Typography>
                         </Box>
@@ -1087,7 +1095,10 @@ const Publico = () => {
                             textTransform: "none",
                             bgcolor: "#ff7a3d",
                             fontWeight: 1000,
-                            boxShadow: "0 10px 22px rgba(255,122,61,0.28)",
+                            fontSize: "0.76rem",
+                            minHeight: 30,
+                            px: 1.15,
+                            boxShadow: "0 8px 18px rgba(255,122,61,0.24)",
                             "&:hover": { bgcolor: "#ff6b2a" },
                           }}
                         >
@@ -1191,11 +1202,7 @@ const Publico = () => {
               {categoria.itens.map((item, index) => {
                 const categoriaType = inferCategoriaType(categoria, item);
 
-                const isDestaque =
-                  item?.destaque === true ||
-                  item?.destaque === "true" ||
-                  item?.destaque === 1 ||
-                  item?.destaque === "1";
+                const isDestaque = isProdutoDestaque(item);
 
                 return (
                   <Box key={item._id || index} sx={{ mb: 1 }}>

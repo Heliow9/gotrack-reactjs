@@ -14,7 +14,7 @@ const ErroRestaurante = () => {
       <Typography variant="body1" gutterBottom>
         O link pode estar incorreto ou o restaurante não está mais disponível .{result}
       </Typography>
-      <Button variant="contained" color="primary" onClick={() => navigate("/")}>
+      <Button variant="contained" color="primary" onClick={() => navigate("/p")}>
         Voltar para Início
       </Button>
     </Container>

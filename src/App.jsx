@@ -9,7 +9,6 @@ import Produtos from "./pages/Produtos";
 import Publico from "./pages/Publico";
 import PedidoSlugRedirect from "./pages/PedidoSlugRedirect";
 import ErroRestaurante from "./pages/ErroRestaurante";
-import Login from "./pages/Login";
 import Carrinho from "./pages/Carrinho";
 import Checkout from "./pages/Checkout";
 import PedidosCliente from "./pages/PedidosCliente";
@@ -37,7 +36,7 @@ const ProtectedRoute = () => {
 
   if (!token || isTokenExpired()) {
     localStorage.removeItem("token");
-    return <Navigate to="/login" replace />;
+    return <RedirectParaUltimaVitrine />;
   }
 
   return <Outlet />;
@@ -50,7 +49,7 @@ const AppLayout = () => {
 
   const handleLogout = () => {
     localStorage.removeItem("token");
-    navigate("/login", { replace: true });
+    navigate(getCaminhoUltimaVitrine(), { replace: true });
   };
 
   const gradient = "linear-gradient(135deg, #ff3b8a 0%, #ff9b2d 100%)";
@@ -209,21 +208,20 @@ const getUltimoSlugRestaurante = () => {
   }
 };
 
-const RedirectParaUltimaVitrine = () => {
+const getCaminhoUltimaVitrine = () => {
   const slug = getUltimoSlugRestaurante();
-  return <Navigate to={slug ? `/p/${slug}` : "/p"} replace />;
+  return slug ? `/p/${slug}` : "/p";
+};
+
+const RedirectParaUltimaVitrine = () => {
+  return <Navigate to={getCaminhoUltimaVitrine()} replace />;
 };
 
 const App = () => {
-  const token = localStorage.getItem("token");
-
   return (
     <Routes>
-      {/* LOGIN – se já estiver logado, redireciona pra / */}
-      <Route
-        path="/login"
-        element={token ? <Navigate to="/" replace /> : <Login />}
-      />
+      {/* raiz da vitrine: usa o último slug conhecido; se não existir, abre /p */}
+      <Route path="/" element={<RedirectParaUltimaVitrine />} />
 
       {/* rotas públicas */}
       <Route path="/p/:slug" element={<Publico />} />
@@ -237,7 +235,7 @@ const App = () => {
 
       {/* rotas protegidas */}
       <Route element={<ProtectedRoute />}>
-        <Route path="/" element={<AppLayout />}>
+        <Route path="/admin" element={<AppLayout />}>
           <Route index element={<Dashboard />} />
           <Route path="pedidos" element={<Pedidos />} />
           <Route path="motoristas" element={<Motoristas />} />

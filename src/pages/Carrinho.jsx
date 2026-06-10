@@ -120,7 +120,7 @@ export default function Carrinho() {
 
   const irParaCardapio = () => {
     if (slugEfetivo) return navigate(`/p/${slugEfetivo}`);
-    return navigate("/");
+    return navigate("/p");
   };
 
   // Mantém restaurante/status atualizado

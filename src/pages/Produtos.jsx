@@ -40,6 +40,13 @@ import TuneIcon from "@mui/icons-material/Tune";
 
 const API_URL = import.meta.env.VITE_API_URL || "https://api.movyo.delivery";
 
+const isProdutoDestaque = (produto = {}) => {
+  const value = produto?.destaque ?? produto?.emDestaque ?? produto?.isDestaque ?? produto?.destaqueVitrine;
+  if (value === true || value === 1) return true;
+  if (typeof value === "string") return ["true", "1", "sim", "yes", "s"].includes(value.trim().toLowerCase());
+  return false;
+};
+
 const MOCK_IMAGE =
   "https://cdn.pixabay.com/photo/2017/12/09/08/18/pizza-3007395_960_720.jpg";
 
@@ -108,6 +115,7 @@ export default function ProdutosTab({ handleSnackbar }) {
       const res = await axios.get(`${API_URL}/api/produtos/${restauranteId}`);
       const comImagem = (res.data || []).map((p) => ({
         ...p,
+        destaque: isProdutoDestaque(p),
         imagem: p.imagem || MOCK_IMAGE,
       }));
       setProdutos(comImagem);
@@ -307,6 +315,17 @@ export default function ProdutosTab({ handleSnackbar }) {
     } catch (err) {
       console.error(err);
       handleSnackbar("Erro ao alterar status", "error");
+    }
+  };
+
+  const toggleProdutoDestaque = async (produtoId, estadoAtual) => {
+    try {
+      await axios.put(`${API_URL}/api/produtos/${produtoId}/destaque`, { destaque: !estadoAtual });
+      await fetchProdutos();
+      handleSnackbar(!estadoAtual ? "Produto destacado na vitrine!" : "Produto removido dos destaques.");
+    } catch (err) {
+      console.error(err);
+      handleSnackbar("Erro ao alterar destaque", "error");
     }
   };
 
@@ -1000,6 +1019,18 @@ export default function ProdutosTab({ handleSnackbar }) {
                                 />
                               }
                               label={prod.ativo === false ? "Inativo" : "Ativo"}
+                              sx={{ ml: 1 }}
+                            />
+
+                            <FormControlLabel
+                              control={
+                                <Switch
+                                  size="small"
+                                  checked={isProdutoDestaque(prod)}
+                                  onChange={() => toggleProdutoDestaque(prod._id, isProdutoDestaque(prod))}
+                                />
+                              }
+                              label={isProdutoDestaque(prod) ? "Em destaque" : "Destacar"}
                               sx={{ ml: 1 }}
                             />
                           </Stack>
