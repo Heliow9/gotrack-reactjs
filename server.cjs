@@ -1,12 +1,3 @@
-/*
-  Servidor da vitrine Movyo com OpenGraph dinâmico por restaurante.
-  Uso em produção:
-    npm run build
-    APP_BASE_URL=https://app.movyo.delivery API_BASE_URL=https://SEU_DOMINIO_DA_API npm run start
-
-  Ele mantém o mesmo link da vitrine (/p/slug), mas entrega metatags dinâmicas
-  para WhatsApp/Facebook/Instagram antes do React carregar.
-*/
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
@@ -16,8 +7,8 @@ const PORT = Number(process.env.PORT || 3000);
 const DIST_DIR = path.join(__dirname, 'dist');
 const INDEX_PATH = path.join(DIST_DIR, 'index.html');
 
-const APP_BASE_URL = String(process.env.APP_BASE_URL || process.env.VITRINE_BASE_URL || 'https://app.movyo.delivery').replace(/\/+$/, '');
-const API_BASE_URL = String(process.env.API_BASE_URL || process.env.REACT_APP_API_URL || process.env.VITE_API_BASE_URL || '').replace(/\/+$/, '');
+const APP_BASE_URL = String(process.env.APP_BASE_URL || 'https://app.movyo.delivery').replace(/\/+$/, '');
+const API_BASE_URL = String(process.env.API_BASE_URL || 'https://api.movyo.delivery').replace(/\/+$/, '');
 const DEFAULT_OG_IMAGE = `${APP_BASE_URL}/og-image.png`;
 
 function escapeHtml(value) {
@@ -41,13 +32,30 @@ function absoluteUrl(value) {
 }
 
 function buildMeta({ slug, restaurante }) {
-  const nome = String(restaurante?.nome || 'Movyo Delivery').trim();
-  const bairro = String(restaurante?.enderecoBairro || '').trim();
-  const cidade = String(restaurante?.enderecoCidade || '').trim();
+  const nome = String(restaurante?.nome || restaurante?.nomeRestaurante || restaurante?.razaoSocial || 'Movyo Delivery').trim();
+  const bairro = String(restaurante?.enderecoBairro || restaurante?.bairro || '').trim();
+  const cidade = String(restaurante?.enderecoCidade || restaurante?.cidade || '').trim();
   const local = [bairro, cidade].filter(Boolean).join(' • ');
-  const title = nome === 'Movyo Delivery' ? 'Movyo Delivery | Cardápio Digital' : `${nome} | Cardápio Digital`;
-  const description = String(restaurante?.descricao || (local ? `${local} — Peça online pelo cardápio digital.` : `Peça online pelo cardápio digital do ${nome}.`)).trim();
-  const image = absoluteUrl(restaurante?.logoUrl || restaurante?.logoSlug) || DEFAULT_OG_IMAGE;
+
+  const title = nome === 'Movyo Delivery'
+    ? 'Movyo Delivery | Cardápio Digital'
+    : `${nome} | Cardápio Digital`;
+
+  const description = String(
+    restaurante?.descricao ||
+    restaurante?.descricaoLoja ||
+    (local ? `${local} — Peça online pelo cardápio digital.` : `Peça online pelo cardápio digital do ${nome}.`)
+  ).trim();
+
+  const image = absoluteUrl(
+    restaurante?.logoUrl ||
+    restaurante?.logo ||
+    restaurante?.logoPath ||
+    restaurante?.imagemLogo ||
+    restaurante?.foto ||
+    ''
+  ) || DEFAULT_OG_IMAGE;
+
   const url = `${APP_BASE_URL}/p/${encodeURIComponent(slug || '')}`;
 
   return `
@@ -75,45 +83,41 @@ function stripExistingDynamicTags(html) {
 }
 
 async function getOgData(slug) {
-  if (!API_BASE_URL || typeof fetch !== 'function') return null;
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 2500);
-  try {
-    const res = await fetch(`${API_BASE_URL}/api/restaurantes/og/${encodeURIComponent(slug)}`, {
-      signal: controller.signal,
-      headers: { accept: 'application/json' },
-    });
-    if (!res.ok) return null;
-    const json = await res.json();
-    return json?.restaurante || null;
-  } catch (_) {
-    return null;
-  } finally {
-    clearTimeout(timeout);
+  if (!slug || !API_BASE_URL) return null;
+
+  const urls = [
+    `${API_BASE_URL}/api/restaurantes/og/${encodeURIComponent(slug)}`,
+    `${API_BASE_URL}/api/public/restaurantes/${encodeURIComponent(slug)}`,
+    `${API_BASE_URL}/api/vitrine/restaurante/${encodeURIComponent(slug)}`
+  ];
+
+  for (const url of urls) {
+    try {
+      const res = await fetch(url, { headers: { Accept: 'application/json' } });
+      if (!res.ok) continue;
+
+      const json = await res.json();
+      return json?.restaurante || json?.data?.restaurante || json?.data || json || null;
+    } catch (_) {}
   }
+
+  return null;
 }
-
-app.disable('x-powered-by');
-app.use((req, res, next) => {
-  res.setHeader('X-Content-Type-Options', 'nosniff');
-  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
-  next();
-});
-
-app.use(express.static(DIST_DIR, { index: false, maxAge: '1h' }));
 
 app.get(['/p', '/p/', '/p/:slug'], async (req, res) => {
   const slug = String(req.params.slug || '').trim().replace(/^\/+|\/+$/g, '');
-  const baseHtml = fs.existsSync(INDEX_PATH)
-    ? fs.readFileSync(INDEX_PATH, 'utf8')
-    : '<!doctype html><html><head></head><body><div id="root"></div></body></html>';
+  const baseHtml = fs.readFileSync(INDEX_PATH, 'utf8');
 
   const restaurante = slug ? await getOgData(slug) : null;
   const meta = buildMeta({ slug, restaurante });
+
   const html = stripExistingDynamicTags(baseHtml).replace('</head>', `${meta}\n</head>`);
+
   res.setHeader('Cache-Control', 'public, max-age=60');
   res.type('html').send(html);
 });
+
+app.use(express.static(DIST_DIR));
 
 app.get('*', (req, res) => {
   res.sendFile(INDEX_PATH);
@@ -121,6 +125,6 @@ app.get('*', (req, res) => {
 
 app.listen(PORT, () => {
   console.log(`✅ Vitrine Movyo rodando na porta ${PORT}`);
-  console.log(`🌐 APP_BASE_URL=${APP_BASE_URL}`);
-  console.log(`🔗 API_BASE_URL=${API_BASE_URL || '(não configurado)'}`);
+  console.log(`APP_BASE_URL=${APP_BASE_URL}`);
+  console.log(`API_BASE_URL=${API_BASE_URL}`);
 });
