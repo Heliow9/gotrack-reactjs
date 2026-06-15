@@ -854,41 +854,20 @@ const Checkout = () => {
     const valorTotalBase = valorProdutos + valorFrete;
     setFrete(valorFrete);
 
-    const carrinhoFormatado = carrinho.map((item) => ({
+    // Envia somente produtos reais. Frete e taxa de cartão não são produtos e são
+    // validados/calculados separadamente pela API.
+    const carrinhoFinal = carrinho.map((item) => ({
       ...item,
+      produtoId: item.produtoId || item.produto?._id || item.produto || item._id || item.id,
       amount: Math.round((calcularValorItem(item) || 0) * 100),
       description: item.nome,
       quantity: item.quantidade,
     }));
 
-    const freteItem = {
-      nome: "Entrega",
-      quantidade: 1,
-      precoUnitario: valorFrete,
-      precoTotal: valorFrete,
-      amount: Math.round(valorFrete * 100),
-      description: "Entrega",
-      quantity: 1,
-    };
-
-    let carrinhoFinal = [...carrinhoFormatado, freteItem];
     let valorTotalFinal = valorTotalBase;
 
     if (isCardLocal) {
       const taxa = round2(valorTotalBase * cardFeeRate);
-      const taxaPercent = round2(cardFeeRate * 100);
-
-      const taxaItem = {
-        nome: `Taxa cartão (${taxaPercent}%)`,
-        quantidade: 1,
-        precoUnitario: taxa,
-        precoTotal: taxa,
-        amount: Math.round(taxa * 100),
-        description: `Taxa cartão (${taxaPercent}%)`,
-        quantity: 1,
-      };
-
-      carrinhoFinal = [...carrinhoFinal, taxaItem];
       valorTotalFinal = round2(valorTotalBase + taxa);
     }
 
@@ -1036,6 +1015,7 @@ const Checkout = () => {
         status: "aguardando_pagamento",
         origem: "vitrine",
         valorFrete,
+        taxaEntrega: valorFrete,
       });
 
       const pedidoId = resp.data?.pedidoId || resp.data?._id || null;
@@ -1099,7 +1079,12 @@ const Checkout = () => {
       iniciarPollingPix(pedidoId, expiresAt);
     } catch (err) {
       console.error("Erro backend:", err?.response?.data || err);
-      toast("error", err?.response?.data?.message || err?.message || "Erro ao finalizar pedido.");
+      const mensagem = err?.response?.data?.message || err?.message || "Erro ao finalizar pedido.";
+      if (/produto.*não foi encontrado|produto indisponível/i.test(mensagem)) {
+        toast("warning", `${mensagem} Volte ao carrinho, remova o item desatualizado e adicione-o novamente.`);
+      } else {
+        toast("error", mensagem);
+      }
     } finally {
       setCarregando(false);
     }
@@ -1206,6 +1191,7 @@ const Checkout = () => {
         status: "aguardando_pagamento",
         origem: "vitrine",
         valorFrete,
+        taxaEntrega: valorFrete,
         mpCard: {
           token,
           payment_method_id,
