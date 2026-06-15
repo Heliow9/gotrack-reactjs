@@ -17,10 +17,11 @@
     "axios": "^1.8.4",
     "cep-promise": "^4.4.1",
     "dayjs": "^1.11.13",
+    "express": "^4.18.3",
     "jwt-decode": "^4.0.0",
     "leaflet": "^1.9.4",
     "mapbox-gl": "3.11.0",
-    "mercadopago": "^2.11.0",
+    "mercadopago": "^3.1.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "react-helmet": "^6.1.0",
@@ -28,10 +29,9 @@
     "react-leaflet": "^5.0.0",
     "react-map-gl": "7.0.18",
     "react-router-dom": "^7.5.0",
-    "react-scripts": "5.0.1",
-    "socket.io-client": "^4.8.1",
-    "web-vitals": "^2.1.4",
-    "express": "^4.18.3"
+    "react-scripts": "^0.0.0",
+    "socket.io-client": "^4.2.0",
+    "web-vitals": "^2.1.4"
   },
   "scripts": {
     "dev": "vite",
@@ -61,6 +61,6 @@
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^5.1.1",
-    "vite": "^7.2.2"
+    "vite": "^8.0.16"
   }
 }
