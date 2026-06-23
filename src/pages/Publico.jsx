@@ -170,12 +170,24 @@ function shouldShowAPartirDe({ categoria, item, categoriaType }) {
  * ✅ Detecta “pizza 2 sabores” mesmo que venha sem flags
  * (usa categoria.tipo / categoria.nome / item.nome como fallback)
  */
-function detectarPizza2Sabores(categoria, item) {
+function detectarMaxSabores(categoria, item) {
+  const direto = Number(item?.maxSabores || categoria?.maxSabores || 0);
+  if (Number.isFinite(direto) && direto > 1) return direto;
   const tipo = String(categoria?.tipo || "").toLowerCase();
   const nomeCat = String(categoria?.nome || "").toLowerCase();
   const nomeItem = String(item?.nome || "").toLowerCase();
 
   const txt = `${tipo} ${nomeCat} ${nomeItem}`;
+  const matchNumero = txt.match(/\b(\d{1,2})\s*(sabor|sabores)\b/);
+  if (matchNumero) {
+    const n = Number(matchNumero[1]);
+    if (Number.isFinite(n) && n > 1) return n;
+  }
+
+  const palavras = { dois: 2, duas: 2, tres: 3, três: 3, quatro: 4, cinco: 5, seis: 6 };
+  for (const [palavra, n] of Object.entries(palavras)) {
+    if (txt.includes(`${palavra} sabor`) || txt.includes(`${palavra} sabores`)) return n;
+  }
 
   // exemplos: "pizza 2 sabores", "pizza 2", "2 sabores", "meio a meio", "metade"
   const tem2 = /\b2\b/.test(txt) || txt.includes("dois");
@@ -184,7 +196,9 @@ function detectarPizza2Sabores(categoria, item) {
 
   // se já é pizza e menciona 2+sabores, ou menciona meio a meio
   const ehPizza = inferCategoriaType(categoria, item) === "pizza";
-  return ehPizza && ((tem2 && falaSabores) || falaMeioMeio);
+  if (ehPizza && ((tem2 && falaSabores) || falaMeioMeio)) return 2;
+
+  return 0;
 }
 
 const Publico = () => {
@@ -337,7 +351,7 @@ const Publico = () => {
                   categoriaType: item.categoriaType || cat.tipo || completo.categoriaType,
                   pizzaMultisabor: item.pizzaMultisabor ?? cat.pizzaMultisabor ?? completo.pizzaMultisabor,
                   calculoPrecoPor: item.calculoPrecoPor || cat.calculoPrecoPor || completo.calculoPrecoPor,
-                  maxSabores: item.maxSabores || cat.maxSabores || completo.maxSabores,
+                  maxSabores: completo.maxSabores || item.maxSabores || cat.maxSabores,
                   preco: precoCorrigido,
                   precoBase: precoCorrigido,
                 };
@@ -617,15 +631,22 @@ const Publico = () => {
       itens: item.extras?.[extra.nome] || [],
     }));
 
-    const ehPizza2 = detectarPizza2Sabores(categoria, item);
+    const maxSaboresDetectado = detectarMaxSabores(categoria, item);
 
     const pizzaMultisabor =
       Boolean(categoria?.pizzaMultisabor) ||
       Boolean(item?.pizzaMultisabor) ||
-      ehPizza2;
+      maxSaboresDetectado > 1;
+
+    const maxSaboresConfigurado = Number(item?.maxSabores || 0) > 1
+      ? Number(item.maxSabores)
+      : Number(categoria?.maxSabores || 0) > 1
+        ? Number(categoria.maxSabores)
+        : 0;
 
     const maxSabores =
-      Number(categoria?.maxSabores || item?.maxSabores) ||
+      maxSaboresConfigurado ||
+      maxSaboresDetectado ||
       (pizzaMultisabor ? 2 : 1);
 
     setProdutoSelecionado({

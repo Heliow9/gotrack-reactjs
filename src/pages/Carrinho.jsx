@@ -238,13 +238,14 @@ export default function Carrinho() {
 
     const sabores = normalizeStringsArray(saboresRaw);
 
+    const maxSabores = Math.max(1, Number(item?.maxSabores || 0) || sabores.length || 1);
     const isPizzaMulti =
       item?.categoriaType === "pizza" ||
       item?.pizzaMultisabor === true ||
       Number(item?.maxSabores || 0) >= 2;
 
     if (sabores.length) {
-      const saboresFinal = isPizzaMulti ? sabores.slice(0, 2) : sabores;
+      const saboresFinal = isPizzaMulti ? sabores.slice(0, maxSabores) : sabores;
 
       // ✅ Aqui é o formato que você quer:
       // Sabores:

@@ -13,6 +13,7 @@ import Carrinho from "./pages/Carrinho";
 import Checkout from "./pages/Checkout";
 import PedidosCliente from "./pages/PedidosCliente";
 import Acompanhar from "./pages/Acompanhar";
+import ModalPedido from "./components/ModalPedido";
 
 import {
   Button,
@@ -45,7 +46,7 @@ const ProtectedRoute = () => {
 // 🎨 Layout principal do painel (sidebar + topo + conteúdo)
 const AppLayout = () => {
   const navigate = useNavigate();
-  const { fullscreen, setFullscreen, setAbrirModalPedido } = useUI();
+  const { fullscreen, setFullscreen, abrirModalPedido, setAbrirModalPedido } = useUI();
 
   const handleLogout = () => {
     localStorage.removeItem("token");
@@ -55,6 +56,7 @@ const AppLayout = () => {
   const gradient = "linear-gradient(135deg, #ff3b8a 0%, #ff9b2d 100%)";
 
   return (
+    <>
     <Box
       sx={{
         display: "flex",
@@ -194,6 +196,8 @@ const AppLayout = () => {
         </Box>
       </Box>
     </Box>
+    <ModalPedido isOpen={abrirModalPedido} onClose={() => setAbrirModalPedido(false)} />
+    </>
   );
 };
 

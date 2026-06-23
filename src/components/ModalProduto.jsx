@@ -63,8 +63,29 @@ function isPizzaProduto(produto) {
   if (produto.categoriaType === "pizza") return true;
   if (produto.pizzaMultisabor === true) return true;
   if (produto.permiteSabores === true) return true;
+  if (Number(produto.maxSabores || 0) > 1) return true;
   if ((produto.saboresDisponiveis || []).length > 0) return true;
   return false;
+}
+
+function detectarMaxSaboresProduto(produto) {
+  if (!produto) return 1;
+  const direto = Number(produto.maxSabores || 0);
+  if (Number.isFinite(direto) && direto > 1) return direto;
+
+  const txt = `${produto.nome || ""} ${produto.categoriaNome || ""} ${produto.categoriaType || ""}`.toLowerCase();
+  const matchNumero = txt.match(/\b(\d{1,2})\s*(sabor|sabores)\b/);
+  if (matchNumero) {
+    const n = Number(matchNumero[1]);
+    if (Number.isFinite(n) && n > 1) return n;
+  }
+
+  const palavras = { dois: 2, duas: 2, tres: 3, três: 3, quatro: 4, cinco: 5, seis: 6 };
+  for (const [palavra, n] of Object.entries(palavras)) {
+    if (txt.includes(`${palavra} sabor`) || txt.includes(`${palavra} sabores`)) return n;
+  }
+
+  return produto.pizzaMultisabor ? 2 : 1;
 }
 
 // ✅ pega restaurante atual do localStorage (mesmo padrão do seu Checkout)
@@ -107,12 +128,7 @@ const ModalProduto = ({ open, onClose, produto }) => {
   const maxSabores = useMemo(() => {
     if (!produto) return 1;
 
-    const ms = Number(produto.maxSabores);
-    if (Number.isFinite(ms) && ms > 0) return ms;
-
-    if (produto.pizzaMultisabor) return 2;
-
-    return 1;
+    return detectarMaxSaboresProduto(produto);
   }, [produto]);
 
   const isPizzaMultiSabor = isPizza && maxSabores > 1;
@@ -211,6 +227,9 @@ const ModalProduto = ({ open, onClose, produto }) => {
       if (maxSabores > 1) {
         if (saboresSelecionados.length !== maxSabores) {
           return `Selecione exatamente ${maxSabores} sabor(es).`;
+        }
+        if (saboresSelecionados.length > maxSabores) {
+          return `Selecione no maximo ${maxSabores} sabor(es).`;
         }
       } else {
         if (saboresDisp.length >= 1 && saboresSelecionados.length !== 1) {
@@ -397,7 +416,7 @@ const ModalProduto = ({ open, onClose, produto }) => {
           {isPizza && saboresDisp.length > 0 && (
             <Box sx={{ mt: 2 }}>
               <Typography variant="subtitle1" fontWeight="bold" gutterBottom>
-                Sabores {isPizzaMultiSabor ? `(escolha exatamente ${maxSabores})` : ""}
+                Sabores {isPizzaMultiSabor ? `(escolha ${maxSabores})` : ""}
               </Typography>
 
               {maxSabores === 1 ? (
