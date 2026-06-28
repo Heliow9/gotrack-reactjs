@@ -76,24 +76,58 @@ function plural(n, s, p) {
   return n === 1 ? s : p;
 }
 
+function formatOptionName(option) {
+  if (!option) return "";
+  if (typeof option === "string") return option.trim();
+  if (typeof option === "number") return String(option);
+  if (typeof option === "object") {
+    const nome = option.nome || option.name || option.titulo || option.label || option.descricao || "";
+    const texto = nome.toString().trim();
+    if (!texto) return "";
+
+    const preco = Number(option.preco || option.valor || option.precoExtra || 0);
+    if (Number.isFinite(preco) && preco > 0) return `${texto} (+${formatBRL(preco)})`;
+    return texto;
+  }
+  return "";
+}
+
 function normalizeStringsArray(val) {
   if (!val) return [];
-  if (typeof val === "string") return val.trim() ? [val.trim()] : [];
+  if (typeof val === "string" || typeof val === "number") {
+    const texto = formatOptionName(val);
+    return texto ? [texto] : [];
+  }
   if (Array.isArray(val)) {
-    return val
-      .map((x) => {
-        if (!x) return null;
-        if (typeof x === "string") return x.trim();
-        if (typeof x === "object") return (x.nome || x.name || "").toString().trim() || null;
-        return null;
-      })
-      .filter(Boolean);
+    return val.map(formatOptionName).filter(Boolean);
   }
   if (typeof val === "object") {
     if (Array.isArray(val.saboresSelecionados)) return normalizeStringsArray(val.saboresSelecionados);
     if (Array.isArray(val.sabores)) return normalizeStringsArray(val.sabores);
+    const texto = formatOptionName(val);
+    return texto ? [texto] : [];
   }
   return [];
+}
+
+function removerDuplicados(arr = []) {
+  const vistos = new Set();
+  return arr.filter((item) => {
+    const chave = String(item || "").trim().toLowerCase();
+    if (!chave || vistos.has(chave)) return false;
+    vistos.add(chave);
+    return true;
+  });
+}
+
+function isPizzaItem(item) {
+  return (
+    item?.categoriaType === "pizza" ||
+    item?.pizzaMultisabor === true ||
+    Number(item?.maxSabores || 0) > 0 ||
+    Array.isArray(item?.saboresSelecionados) ||
+    Array.isArray(item?.pizza?.saboresSelecionados)
+  );
 }
 
 export default function Carrinho() {
@@ -224,11 +258,12 @@ export default function Carrinho() {
   };
 
   /**
-   * ✅ Monta linhas/chips com detalhes do item
-   * - sabores: quando for 2 sabores, renderiza em linhas
+   * ✅ Monta detalhes completos do item sem cortar texto.
+   * A tela antiga usava Chip pequeno com nowrap, por isso aparecia "...".
    */
   const getDetalhes = (item) => {
-    const chips = [];
+    const detalhes = [];
+    const pizza = isPizzaItem(item);
 
     // ---------- SABORES ----------
     const saboresRaw =
@@ -237,76 +272,120 @@ export default function Carrinho() {
       item?.pizza?.saboresSelecionados ??
       item?.pizza?.sabores;
 
-    const sabores = normalizeStringsArray(saboresRaw);
-
+    const sabores = removerDuplicados(normalizeStringsArray(saboresRaw));
     const maxSabores = Math.max(1, Number(item?.maxSabores || 0) || sabores.length || 1);
-    const isPizzaMulti =
-      item?.categoriaType === "pizza" ||
-      item?.pizzaMultisabor === true ||
-      Number(item?.maxSabores || 0) >= 2;
 
     if (sabores.length) {
-      const saboresFinal = isPizzaMulti ? sabores.slice(0, maxSabores) : sabores;
-
-      // ✅ Aqui é o formato que você quer:
-      // Sabores:
-      // Calabresa
-      // 4 Queijos
-      chips.push({
+      detalhes.push({
         key: "sabores",
-        labelNode: (
-          <Box sx={{ display: "flex", flexDirection: "column", gap: 0.25 }}>
-            <Typography sx={{ fontWeight: 900, fontSize: 12, lineHeight: 1.1 }}>
-              Sabores:
-            </Typography>
-
-            {saboresFinal.map((s, idx) => (
-              <Typography
-                key={`${s}-${idx}`}
-                sx={{ fontWeight: 800, fontSize: 12, lineHeight: 1.1 }}
-              >
-                {s}
-              </Typography>
-            ))}
-          </Box>
-        ),
+        titulo: sabores.length > 1 ? "Sabores" : "Sabor",
+        valores: sabores.slice(0, maxSabores),
+        destaque: true,
       });
     }
 
     // ---------- BORDA ----------
-    if (item?.bordaSelecionada?.nome) {
-      chips.push({ key: "borda", label: `Borda: ${item.bordaSelecionada.nome}` });
+    if (pizza) {
+      const bordaNome = item?.bordaSelecionada?.nome || item?.bordaSelecionada?.name || "Sem borda";
+      detalhes.push({ key: "borda", titulo: "Borda", valores: [bordaNome] });
+    } else if (item?.bordaSelecionada?.nome) {
+      detalhes.push({ key: "borda", titulo: "Borda", valores: [item.bordaSelecionada.nome] });
     }
 
     // ---------- ADICIONAL ----------
     if (item?.adicionalSelecionado?.nome) {
-      chips.push({
+      detalhes.push({
         key: "adicional",
-        label: `Adicional: ${item.adicionalSelecionado.nome}`,
+        titulo: "Adicional",
+        valores: [formatOptionName(item.adicionalSelecionado)],
       });
     }
 
     // ---------- COMPLEMENTOS ----------
-    const comps = normalizeStringsArray(item?.complementosSelecionados);
+    const comps = removerDuplicados(normalizeStringsArray(item?.complementosSelecionados));
     if (comps.length) {
-      chips.push({ key: "comps", label: `Complementos: ${comps.join(", ")}` });
+      detalhes.push({ key: "comps", titulo: "Complementos", valores: comps });
     }
 
     // ---------- TIPOS EXTRAS ----------
     if (item?.tiposExtrasSelecionados && typeof item.tiposExtrasSelecionados === "object") {
       Object.entries(item.tiposExtrasSelecionados).forEach(([nomeTipo, itensTipo]) => {
-        const nomes = normalizeStringsArray(itensTipo).slice(0, 6);
+        const nomes = removerDuplicados(normalizeStringsArray(itensTipo));
         if (nomes.length) {
-          chips.push({
+          detalhes.push({
             key: `extra-${nomeTipo}`,
-            label: `${nomeTipo}: ${nomes.join(", ")}`,
+            titulo: nomeTipo,
+            valores: nomes,
           });
         }
       });
     }
 
-    return chips;
+    if (item?.observacao?.trim?.()) {
+      detalhes.push({
+        key: "obs",
+        titulo: "Observação",
+        valores: [item.observacao.trim()],
+        observacao: true,
+      });
+    }
+
+    return detalhes;
   };
+
+  const renderDetalheItem = (detalhe) => {
+    const valores = detalhe.valores || [];
+    if (!valores.length) return null;
+
+    return (
+      <Box
+        key={detalhe.key}
+        sx={{
+          px: 1.2,
+          py: 0.85,
+          borderRadius: 2,
+          bgcolor: detalhe.destaque ? "rgba(255,122,61,0.10)" : "rgba(17,24,39,0.045)",
+          border: detalhe.destaque
+            ? "1px solid rgba(255,122,61,0.16)"
+            : "1px solid rgba(17,24,39,0.055)",
+        }}
+      >
+        <Typography
+          variant="caption"
+          sx={{
+            display: "block",
+            lineHeight: 1.1,
+            fontWeight: 1000,
+            color: detalhe.destaque ? "#c4511f" : "text.secondary",
+            textTransform: "uppercase",
+            letterSpacing: 0.35,
+            mb: 0.35,
+          }}
+        >
+          {detalhe.titulo}
+        </Typography>
+
+        <Stack spacing={0.15}>
+          {valores.map((valor, idx) => (
+            <Typography
+              key={`${detalhe.key}-${idx}-${valor}`}
+              sx={{
+                fontSize: 13,
+                fontWeight: detalhe.destaque ? 1000 : 850,
+                color: detalhe.observacao ? "text.secondary" : "#111827",
+                lineHeight: 1.22,
+                whiteSpace: "normal",
+                overflowWrap: "anywhere",
+              }}
+            >
+              {valor}
+            </Typography>
+          ))}
+        </Stack>
+      </Box>
+    );
+  };
+
 
   return (
     <Box sx={{ minHeight: "100vh", backgroundColor: "#f5f5f7", pb: 4 }}>
@@ -432,106 +511,106 @@ export default function Carrinho() {
 
               return (
                 <Box key={item._id || index}>
-                  <Box sx={{ display: "flex", gap: 1.25, p: 2, alignItems: "flex-start" }}>
-                    <Avatar
-                      variant="rounded"
-                      src={item.imagem || DEFAULT_IMAGE_URL}
-                      alt={item.nome}
-                      sx={{ width: 62, height: 62, borderRadius: 2, bgcolor: "#fff" }}
-                    />
+                  <Box sx={{ p: 2 }}>
+                    <Stack direction="row" spacing={1.35} alignItems="flex-start">
+                      <Avatar
+                        variant="rounded"
+                        src={item.imagem || DEFAULT_IMAGE_URL}
+                        alt={item.nome}
+                        sx={{
+                          width: { xs: 72, sm: 82 },
+                          height: { xs: 72, sm: 82 },
+                          borderRadius: 2.5,
+                          bgcolor: "#fff",
+                          boxShadow: "0 8px 24px rgba(15,23,42,0.10)",
+                          flexShrink: 0,
+                        }}
+                      />
 
-                    <Box sx={{ flex: 1, minWidth: 0 }}>
-                      <Typography fontWeight={1000} noWrap>
-                        {item.nome}
-                      </Typography>
-
-                      {/* detalhes (chips) */}
-                      {detalhes.length > 0 && (
-                        <Box
+                      <Box sx={{ flex: 1, minWidth: 0 }}>
+                        <Typography
+                          fontWeight={1000}
                           sx={{
-                            mt: 0.6,
-                            display: "flex",
-                            gap: 0.6,
-                            flexWrap: "wrap",
-                            width: "100%",
+                            fontSize: { xs: 16, sm: 18 },
+                            lineHeight: 1.12,
+                            color: "#111827",
+                            whiteSpace: "normal",
+                            overflowWrap: "anywhere",
                           }}
                         >
-                          {detalhes.map((d, i) => {
-                            const isSabores = d.key === "sabores";
-                            return (
-                              <Chip
-                                key={`${d.key}-${i}`}
-                                label={isSabores ? d.labelNode : d.label}
-                                size="small"
-                                sx={{
-                                  borderRadius: "16px",
-                                  bgcolor: "rgba(17,24,39,0.06)",
-                                  fontWeight: 800,
+                          {item.nome}
+                        </Typography>
 
-                                  ...(isSabores
-                                    ? {
-                                      width: "100%",
-                                      height: "auto",
-                                      py: 0.6,
-                                      alignItems: "flex-start",
-                                      "& .MuiChip-label": {
-                                        whiteSpace: "normal",
-                                        overflow: "visible",
-                                        textOverflow: "unset",
-                                        display: "block",
-                                        px: 1.0,
-                                        py: 0.2,
-                                      },
-                                    }
-                                    : {
-                                      height: 22,
-                                      "& .MuiChip-label": {
-                                        whiteSpace: "nowrap",
-                                      },
-                                    }),
-                                }}
-                              />
-                            );
-                          })}
-                        </Box>
-                      )}
-
-                      {item.observacao && (
                         <Typography
                           variant="caption"
-                          color="text.secondary"
-                          sx={{ display: "block", mt: 0.6 }}
+                          sx={{ display: "block", mt: 0.55, color: "text.secondary", fontWeight: 800 }}
                         >
-                          Obs: {item.observacao}
+                          {qtd} {plural(qtd, "unidade", "unidades")} · Unitário {formatBRL(subtotal / qtd)}
                         </Typography>
-                      )}
+                      </Box>
 
-                      <Typography variant="body2" color="primary" fontWeight={1000} sx={{ mt: 0.8 }}>
+                      <Box sx={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 0.8, flexShrink: 0 }}>
+                        <Stack
+                          direction="row"
+                          spacing={0.35}
+                          alignItems="center"
+                          sx={{
+                            bgcolor: "rgba(17,24,39,0.045)",
+                            borderRadius: "999px",
+                            p: 0.25,
+                            border: "1px solid rgba(17,24,39,0.06)",
+                          }}
+                        >
+                          <IconButton size="small" onClick={() => alterarQtd(index, -1)} sx={{ width: 28, height: 28 }}>
+                            <RemoveIcon fontSize="small" />
+                          </IconButton>
+                          <Typography fontWeight={1000} sx={{ minWidth: 18, textAlign: "center" }}>
+                            {qtd}
+                          </Typography>
+                          <IconButton size="small" onClick={() => alterarQtd(index, +1)} sx={{ width: 28, height: 28 }}>
+                            <AddIcon fontSize="small" />
+                          </IconButton>
+                        </Stack>
+
+                        <IconButton
+                          onClick={() => removerItem(index)}
+                          aria-label="Remover item"
+                          sx={{
+                            width: 34,
+                            height: 34,
+                            color: "#8a8f98",
+                            bgcolor: "rgba(17,24,39,0.045)",
+                            "&:hover": { bgcolor: "rgba(198,40,40,0.10)", color: "#c62828" },
+                          }}
+                        >
+                          <DeleteIcon fontSize="small" />
+                        </IconButton>
+                      </Box>
+                    </Stack>
+
+                    {detalhes.length > 0 && (
+                      <Stack spacing={0.75} sx={{ mt: 1.4 }}>
+                        {detalhes.map(renderDetalheItem)}
+                      </Stack>
+                    )}
+
+                    <Stack
+                      direction="row"
+                      justifyContent="space-between"
+                      alignItems="center"
+                      sx={{
+                        mt: 1.35,
+                        pt: 1.15,
+                        borderTop: "1px dashed rgba(17,24,39,0.10)",
+                      }}
+                    >
+                      <Typography variant="caption" sx={{ color: "text.secondary", fontWeight: 900 }}>
+                        Subtotal do item
+                      </Typography>
+                      <Typography color="primary" fontWeight={1100} sx={{ fontSize: 17 }}>
                         {formatBRL(subtotal)}
                       </Typography>
-                    </Box>
-
-                    <Box sx={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 1 }}>
-                      <Stack direction="row" spacing={0.5} alignItems="center">
-                        <IconButton size="small" onClick={() => alterarQtd(index, -1)}>
-                          <RemoveIcon fontSize="small" />
-                        </IconButton>
-                        <Typography fontWeight={900} sx={{ minWidth: 18, textAlign: "center" }}>
-                          {qtd}
-                        </Typography>
-                        <IconButton size="small" onClick={() => alterarQtd(index, +1)}>
-                          <AddIcon fontSize="small" />
-                        </IconButton>
-                      </Stack>
-
-                      <IconButton
-                        onClick={() => removerItem(index)}
-                        aria-label="Remover item"
-                        sx={{ mt: -0.25 }}
-                      >
-                        <DeleteIcon />
-                      </IconButton>
-                    </Box>
+                    </Stack>
                   </Box>
 
                   {index < itens.length - 1 && <Divider />}
