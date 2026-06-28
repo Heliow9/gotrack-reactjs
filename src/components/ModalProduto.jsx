@@ -58,6 +58,20 @@ function formatBRL(value) {
   return num.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
 
+
+function normalizeOptionName(value) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLowerCase();
+}
+
+function isTipoExtraBorda(tipo) {
+  const nome = normalizeOptionName(tipo?.nome);
+  return ["borda", "bordas", "borda recheada", "bordas recheadas"].includes(nome);
+}
+
 function isPizzaProduto(produto) {
   if (!produto) return false;
   if (produto.categoriaType === "pizza") return true;
@@ -134,6 +148,15 @@ const ModalProduto = ({ open, onClose, produto }) => {
 
   const isPizzaMultiSabor = isPizza && maxSabores > 1;
 
+  // Evita duplicidade entre a seção nativa "Borda" e extras antigos chamados "Borda/Bordas".
+  // Quando o cliente escolhe "Sem borda", isso já é uma escolha válida e não deve travar a pizza.
+  const tiposExtrasValidaveis = useMemo(() => {
+    const tipos = produto?.tiposExtras || [];
+    const temSecaoNativaDeBorda = (produto?.bordasDisponiveis || []).length > 0;
+    if (!temSecaoNativaDeBorda) return tipos;
+    return tipos.filter((tipo) => !isTipoExtraBorda(tipo));
+  }, [produto]);
+
   useEffect(() => {
     if (!open || !produto) return;
 
@@ -151,7 +174,7 @@ const ModalProduto = ({ open, onClose, produto }) => {
     }
 
     const autoSelectExtras = {};
-    produto?.tiposExtras?.forEach((tipo) => {
+    tiposExtrasValidaveis.forEach((tipo) => {
       if (tipo.tipoSelecion === "unico" && tipo.itens?.length === 1) {
         autoSelectExtras[tipo.nome] = [tipo.itens[0]];
       }
@@ -160,7 +183,7 @@ const ModalProduto = ({ open, onClose, produto }) => {
       }
     });
     setTiposExtrasSelecionados(autoSelectExtras);
-  }, [open, produto, isPizza, maxSabores, saboresDisp.length]);
+  }, [open, produto, isPizza, maxSabores, saboresDisp.length, tiposExtrasValidaveis]);
 
   const precoTotal = useMemo(() => {
     if (!produto) return 0;
@@ -239,8 +262,7 @@ const ModalProduto = ({ open, onClose, produto }) => {
       }
     }
 
-    const tipos = produto.tiposExtras || [];
-    for (const tipo of tipos) {
+    for (const tipo of tiposExtrasValidaveis) {
       const selecionados = tiposExtrasSelecionados[tipo.nome] || [];
       if (tipo.obrigatorio && selecionados.length === 0) {
         return `Selecione pelo menos uma opção em "${tipo.nome}".`;
@@ -506,7 +528,7 @@ const ModalProduto = ({ open, onClose, produto }) => {
           )}
 
           {/* Tipos extras */}
-          {produto.tiposExtras?.map((tipo, idx) => {
+          {tiposExtrasValidaveis.map((tipo, idx) => {
             if (!Array.isArray(tipo.itens) || tipo.itens.length === 0) return null;
 
             const selecionados = tiposExtrasSelecionados[tipo.nome] || [];
