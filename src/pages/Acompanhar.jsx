@@ -2,11 +2,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import { Box, Typography, CircularProgress, Alert } from '@mui/material';
-import mapboxgl from 'mapbox-gl';
-import 'mapbox-gl/dist/mapbox-gl.css';
-import { API_URL } from '../config';
-
-mapboxgl.accessToken = 'SEU_TOKEN_AQUI'; // substitua pelo seu token público
+import { API_URL, MAPBOX_TOKEN } from '../config';
 
 export default function Acompanhar() {
   const { token } = useParams();
@@ -15,6 +11,7 @@ export default function Acompanhar() {
   const mapContainer = useRef(null);
   const map = useRef(null);
   const marker = useRef(null);
+  const mapboxRef = useRef(null);
 
   useEffect(() => {
     const buscar = async () => {
@@ -34,26 +31,49 @@ export default function Acompanhar() {
   }, [token]);
 
   useEffect(() => {
-    if (dados?.status === 'em_entrega' && dados.localizacao && mapContainer.current) {
+    if (!(dados?.status === 'em_entrega' && dados.localizacao && mapContainer.current && MAPBOX_TOKEN)) return;
+
+    let cancelled = false;
+
+    const carregarMapa = async () => {
+      const mapboxModule = await import('mapbox-gl');
+      await import('mapbox-gl/dist/mapbox-gl.css');
+      if (cancelled) return;
+
+      const mapboxgl = mapboxModule.default || mapboxModule;
+      mapboxgl.accessToken = MAPBOX_TOKEN;
+      mapboxRef.current = mapboxgl;
+
+      const lngLat = [dados.localizacao.longitude, dados.localizacao.latitude];
+
       if (!map.current) {
         map.current = new mapboxgl.Map({
           container: mapContainer.current,
           style: 'mapbox://styles/mapbox/streets-v11',
-          center: [dados.localizacao.longitude, dados.localizacao.latitude],
+          center: lngLat,
           zoom: 15,
         });
 
-        marker.current = new mapboxgl.Marker()
-          .setLngLat([dados.localizacao.longitude, dados.localizacao.latitude])
-          .addTo(map.current);
+        marker.current = new mapboxgl.Marker().setLngLat(lngLat).addTo(map.current);
       } else {
-        map.current.setCenter([dados.localizacao.longitude, dados.localizacao.latitude]);
-        marker.current?.setLngLat([dados.localizacao.longitude, dados.localizacao.latitude]);
+        map.current.setCenter(lngLat);
+        marker.current?.setLngLat(lngLat);
       }
-    }
+    };
+
+    carregarMapa().catch((e) => setErro(e?.message || 'Não foi possível carregar o mapa.'));
+    return () => { cancelled = true; };
   }, [dados]);
 
-  if (erro?.includes("entregue")) {
+  useEffect(() => {
+    return () => {
+      try { map.current?.remove?.(); } catch {}
+      map.current = null;
+      marker.current = null;
+    };
+  }, []);
+
+  if (erro?.includes('entregue')) {
     return <Alert severity="success">✅ Pedido entregue com sucesso!</Alert>;
   }
 
@@ -68,13 +88,19 @@ export default function Acompanhar() {
       <Typography variant="body1">Entregador: {dados.entregador || 'Motoboy'}</Typography>
       <Typography>Status: {dados.status}</Typography>
 
-      {dados.status === 'em_entrega' && (
+      {dados.status === 'em_entrega' && MAPBOX_TOKEN && (
         <Box ref={mapContainer} sx={{ height: 400, mt: 2, borderRadius: 2, overflow: 'hidden' }} />
+      )}
+
+      {dados.status === 'em_entrega' && !MAPBOX_TOKEN && (
+        <Alert severity="info" sx={{ mt: 2 }}>
+          A entrega está em rota. O mapa será exibido quando o token do Mapbox estiver configurado.
+        </Alert>
       )}
 
       {dados.status === 'entregue' && (
         <Alert severity="success" sx={{ mt: 2 }}>
-          ✅ Pedido entregue com sucesso! Obrigado por usar o RapiGO.
+          ✅ Pedido entregue com sucesso! Obrigado por usar o Movyo.
         </Alert>
       )}
     </Box>

@@ -109,6 +109,7 @@ function readCart() {
 
 function writeCart(items) {
   localStorage.setItem(CART_KEY, JSON.stringify(Array.isArray(items) ? items : []));
+  try { window.dispatchEvent(new Event("movyo:carrinhoAtualizado")); } catch {}
 }
 
 const ModalProduto = ({ open, onClose, produto }) => {

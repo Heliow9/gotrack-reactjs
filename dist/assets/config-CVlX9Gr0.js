@@ -1,0 +1,1 @@
+function e(e){return String(e||``).trim().replace(/\/+$/,``)}var t=e(`https://api.movyo.delivery`);t.endsWith(`/api`)&&t.slice(0,-4);var n=t.endsWith(`/api`)?t:`${t}/api`,r=n,i=`pk.eyJ1IjoiaGVsaW93OSIsImEiOiJjbTljNDRnazgwZ3BmMmxwdW9nbWk1c3ZmIn0.NR96Um-T_CqTI3jDb7c2OQ`;export{n,i as r,r as t};

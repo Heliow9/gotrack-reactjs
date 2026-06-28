@@ -1,6 +1,6 @@
 {
-  "name": "meu-mapa",
-  "version": "0.1.0",
+  "name": "movyo-vitrine-publica",
+  "version": "2.3.0",
   "private": true,
   "dependencies": {
     "@emotion/react": "^11.14.0",

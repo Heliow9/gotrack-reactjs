@@ -117,9 +117,19 @@ app.get(['/p', '/p/', '/p/:slug'], async (req, res) => {
   res.type('html').send(html);
 });
 
-app.use(express.static(DIST_DIR));
+app.use(express.static(DIST_DIR, {
+  etag: true,
+  maxAge: '30d',
+  immutable: true,
+  setHeaders(res, filePath) {
+    if (filePath.endsWith('index.html')) {
+      res.setHeader('Cache-Control', 'no-cache');
+    }
+  },
+}));
 
 app.get('*', (req, res) => {
+  res.setHeader('Cache-Control', 'no-cache');
   res.sendFile(INDEX_PATH);
 });
 

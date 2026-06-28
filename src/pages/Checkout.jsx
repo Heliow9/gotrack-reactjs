@@ -165,6 +165,7 @@ const Checkout = () => {
   const [entregaDisponivel, setEntregaDisponivel] = useState(null); // null = ainda não validado
   const [entregaMensagem, setEntregaMensagem] = useState("");
   const [validandoEntrega, setValidandoEntrega] = useState(false);
+  const [freteConfig, setFreteConfig] = useState(null);
 
   // congela frete no cartão
   const [freteCongelado, setFreteCongelado] = useState(null);
@@ -382,7 +383,7 @@ const Checkout = () => {
     return total;
   };
 
-  // ===== BUSCA RESTAURANTE ATUALIZADO =====
+  // ===== BUSCA CONFIGURAÇÕES DO CHECKOUT =====
   useEffect(() => {
     const id = restauranteInicial?._id || restaurante?._id;
     if (!id) return;
@@ -392,16 +393,47 @@ const Checkout = () => {
     (async () => {
       try {
         setRestCarregando(true);
+        setMpCarregando(true);
 
-        const { data } = await axios.get(`${RESTAURANTE_PUBLICO_URL}/${id}`, {
-          signal: controller.signal,
-        });
+        try {
+          const { data } = await axios.get(`${API}/vitrine/checkout-config/${id}`, {
+            signal: controller.signal,
+          });
 
-        const r = data?.restaurante ?? data;
+          const r = data?.restaurante ?? data;
+          if (r?._id) {
+            setRestaurante((prev) => ({ ...(prev || {}), ...r }));
+            setFreteConfig(data?.frete || null);
+            setMpConectado(!!data?.mercadoPago?.conectado || !!r?.mpConectado);
+
+            try {
+              const raw = JSON.parse(localStorage.getItem("restauranteSelecionado") || "null");
+              if (raw) {
+                const merged = raw?.restaurante ? { ...raw, restaurante: { ...raw.restaurante, ...r } } : { ...raw, ...r };
+                localStorage.setItem("restauranteSelecionado", JSON.stringify(merged));
+              }
+            } catch {}
+
+            if (r?.pagamentoCartaoAtivo === false) {
+              setFormaPagamento("Pix");
+              setFreteCongelado(null);
+              setLatLngCongelado(null);
+              setCardAmountLocked(null);
+            }
+            return;
+          }
+        } catch (novaRotaErr) {
+          console.warn("Rota /vitrine/checkout-config indisponível; usando fallback legado:", novaRotaErr?.message || novaRotaErr);
+        }
+
+        const [{ data: restData }, mpResult] = await Promise.all([
+          axios.get(`${RESTAURANTE_PUBLICO_URL}/${id}`, { signal: controller.signal }),
+          axios.get(`${MP_STATUS_PUBLICO_URL}/${id}`, { signal: controller.signal }).catch(() => ({ data: { conectado: false } })),
+        ]);
+
+        const r = restData?.restaurante ?? restData;
         if (r?._id) {
           setRestaurante((prev) => ({ ...(prev || {}), ...r }));
-
-          // atualiza localStorage
           try {
             const raw = JSON.parse(localStorage.getItem("restauranteSelecionado") || "null");
             if (raw) {
@@ -409,47 +441,20 @@ const Checkout = () => {
               localStorage.setItem("restauranteSelecionado", JSON.stringify(merged));
             }
           } catch {}
-
-          // Se estava no cartão e backend diz off => volta pro Pix
-          const ativo = r?.pagamentoCartaoAtivo !== false;
-          if (!ativo) {
-            setFormaPagamento("Pix");
-            setFreteCongelado(null);
-            setLatLngCongelado(null);
-            setCardAmountLocked(null);
-          }
         }
+        setMpConectado(!!mpResult?.data?.conectado);
       } catch {
-        // segue com cache
+        setMpConectado(false);
       } finally {
         setRestCarregando(false);
         setRestConfirmado(true);
+        setMpCarregando(false);
       }
     })();
 
     return () => controller.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [restauranteInicial?._id]);
-
-  // ===== MP STATUS =====
-  useEffect(() => {
-    const fetchMpStatus = async () => {
-      try {
-        if (!restaurante?._id) {
-          setMpConectado(false);
-          setMpCarregando(false);
-          return;
-        }
-        const { data } = await axios.get(`${MP_STATUS_PUBLICO_URL}/${restaurante._id}`);
-        setMpConectado(!!data?.conectado);
-      } catch {
-        setMpConectado(false);
-      } finally {
-        setMpCarregando(false);
-      }
-    };
-    fetchMpStatus();
-  }, [restaurante?._id]);
 
   // Se está em cartão e cartão ficou indisponível, volta pro Pix e limpa lock
   useEffect(() => {
@@ -663,8 +668,17 @@ const Checkout = () => {
 
   const calcularFrete = async (lng, lat) => {
     try {
-      const res = await axios.get(`${API}/frete/dados/${restaurante._id}`);
-      const { areas = [], faixasRaio = [], localizacaoRestaurante } = res.data || {};
+      let dadosFrete = freteConfig;
+      if (!dadosFrete) {
+        const res = await axios.get(`${API}/frete/dados/${restaurante._id}`);
+        dadosFrete = res.data || {};
+      }
+
+      const {
+        areas = [],
+        faixasRaio = [],
+        localizacaoRestaurante = restaurante?.localizacao,
+      } = dadosFrete || {};
 
       const pontoCliente = turf.point([lng, lat]);
       const temAreas = Array.isArray(areas) && areas.length > 0;
@@ -888,8 +902,15 @@ const Checkout = () => {
 
   const iniciarPollingPix = (pedidoId, expiresAtParam) => {
     limparPollingPix();
+    const startedAt = Date.now();
 
-    pollRef.current = setInterval(async () => {
+    const scheduleNext = () => {
+      const elapsed = Date.now() - startedAt;
+      const delay = elapsed < 30000 ? 3000 : elapsed < 120000 ? 6000 : 10000;
+      pollRef.current = setTimeout(tick, delay);
+    };
+
+    const tick = async () => {
       try {
         const expiresAt = Number(expiresAtParam || pixExpiresAt || 0);
         if (expiresAt && Date.now() >= expiresAt) {
@@ -910,6 +931,7 @@ const Checkout = () => {
 
           localStorage.removeItem(CART_KEY);
           localStorage.removeItem(PIX_PENDENTE_KEY);
+          try { window.dispatchEvent(new Event("movyo:carrinhoAtualizado")); } catch {}
 
           toast("success", "Pagamento aprovado! ✅ Redirecionando...");
           const telGo = (telLimpo || localStorage.getItem(LS_CLIENT_PHONE_KEY) || "").replace(/\D/g, "");
@@ -919,7 +941,10 @@ const Checkout = () => {
       } catch {
         setVerificandoPix(false);
       }
-    }, 2500);
+      scheduleNext();
+    };
+
+    tick();
   };
 
   const resetarPixParaEditar = () => {

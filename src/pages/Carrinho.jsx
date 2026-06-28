@@ -141,6 +141,7 @@ export default function Carrinho() {
   // Persistência carrinho
   useEffect(() => {
     localStorage.setItem(CART_KEY, JSON.stringify(itens || []));
+    try { window.dispatchEvent(new Event("movyo:carrinhoAtualizado")); } catch {}
   }, [itens]);
 
   // ✅ Total (prioriza precoTotal que o Modal já grava pronto)

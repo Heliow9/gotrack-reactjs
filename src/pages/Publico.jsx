@@ -93,6 +93,36 @@ function syncCartOwnerOrReset(restId) {
   localStorage.setItem(CART_OWNER_KEY, restStr);
 }
 
+
+const CARDAPIO_CACHE_PREFIX = "movyo:vitrine:cardapio:";
+const CARDAPIO_CACHE_TTL_MS = 5 * 60 * 1000;
+
+function getCardapioCache(slug) {
+  try {
+    const raw = localStorage.getItem(`${CARDAPIO_CACHE_PREFIX}${String(slug || "").toLowerCase()}`);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed?.ts || Date.now() - parsed.ts > CARDAPIO_CACHE_TTL_MS) return null;
+    return parsed.data || null;
+  } catch {
+    return null;
+  }
+}
+
+function setCardapioCache(slug, data) {
+  try {
+    if (!slug || !data) return;
+    localStorage.setItem(
+      `${CARDAPIO_CACHE_PREFIX}${String(slug || "").toLowerCase()}`,
+      JSON.stringify({ ts: Date.now(), data })
+    );
+  } catch {}
+}
+
+function dispatchCartUpdated() {
+  try { window.dispatchEvent(new Event("movyo:carrinhoAtualizado")); } catch {}
+}
+
 /**
  * ✅ Normaliza SEMPRE para "objeto restaurante puro"
  */
@@ -241,14 +271,18 @@ const Publico = () => {
   // ======= Carrinho contador =======
   useEffect(() => {
     const atualizarQuantidade = () => {
-      const carrinho = JSON.parse(localStorage.getItem(CART_KEY) || "[]") || [];
+      const carrinho = readCartSafe();
       const total = carrinho.reduce((acc, item) => acc + (item.quantidade || 0), 0);
       setQuantidadeCarrinho(total);
     };
 
     atualizarQuantidade();
-    const intervalo = setInterval(atualizarQuantidade, 1200);
-    return () => clearInterval(intervalo);
+    window.addEventListener("storage", atualizarQuantidade);
+    window.addEventListener("movyo:carrinhoAtualizado", atualizarQuantidade);
+    return () => {
+      window.removeEventListener("storage", atualizarQuantidade);
+      window.removeEventListener("movyo:carrinhoAtualizado", atualizarQuantidade);
+    };
   }, []);
 
   // ======= Header compacto ao rolar =======
@@ -270,7 +304,6 @@ const Publico = () => {
 
     const restauranteLSRaw = restauranteData ? JSON.parse(restauranteData) : null;
     const restauranteLS = normalizarRestaurante(restauranteLSRaw);
-
     const slugEfetivo = slug || restauranteLS?.slugIdentificador || restauranteLS?.slug || null;
 
     if (!slugEfetivo) {
@@ -278,17 +311,14 @@ const Publico = () => {
       return;
     }
 
-    // ✅ evita "flash" de restaurante errado:
-    // só usa restaurante do LS se não tiver slug na URL ou se bater com o slug atual
     const slugLS = restauranteLS?.slugIdentificador || restauranteLS?.slug || null;
 
-    // ✅ Se o cliente saiu de /p/movyo para /p/jrlanches, limpa imediatamente
-    // antes mesmo da API responder. Isso impede carrinho/PIX de uma loja aparecer na outra.
     if (slug && slugLS && String(slugLS).toLowerCase() !== String(slug).toLowerCase()) {
       localStorage.removeItem(CART_KEY);
       localStorage.removeItem(CART_OWNER_KEY);
       localStorage.removeItem(PIX_PENDENTE_KEY);
       setQuantidadeCarrinho(0);
+      dispatchCartUpdated();
     }
 
     const podeUsarLS = !slug || (slugLS && String(slugLS).toLowerCase() === String(slug).toLowerCase());
@@ -296,53 +326,102 @@ const Publico = () => {
     if (podeUsarLS && restauranteLS) {
       setRestaurante(restauranteLS);
       setStatusLoja(calcularStatusLoja(restauranteLS));
-      // ⚠️ só sincroniza carrinho com LS se for o mesmo slug da URL
       if (restauranteLS?._id) syncCartOwnerOrReset(restauranteLS._id);
     } else {
       setRestaurante(null);
       setStatusLoja("...");
     }
 
+    const aplicarPayload = (payload, { salvarCache = false } = {}) => {
+      const restauranteFresh = normalizarRestaurante(payload?.restaurante || payload);
+      if (!restauranteFresh) return false;
+
+      if (restauranteFresh?._id) {
+        const owner = String(localStorage.getItem(CART_OWNER_KEY) || "");
+        if (owner && owner !== String(restauranteFresh._id)) setQuantidadeCarrinho(0);
+        syncCartOwnerOrReset(restauranteFresh._id);
+      }
+
+      const restauranteComHorario = {
+        ...restauranteFresh,
+        horariosFuncionamento: restauranteFresh.horariosFuncionamento || payload?.horariosFuncionamento || {},
+      };
+
+      const produtosPorCategoria = payload?.produtosPorCategoria || restauranteFresh?.produtosPorCategoria || [];
+
+      localStorage.setItem("restauranteSelecionado", JSON.stringify(restauranteComHorario));
+      setRestaurante(restauranteComHorario);
+      setStatusLoja(calcularStatusLoja(restauranteComHorario));
+
+      const categoriasBase = (produtosPorCategoria || []).filter((cat) => cat.ativa !== false);
+      const categoriasComItensFiltrados = categoriasBase.map((cat) => ({
+        ...cat,
+        itens: (cat.itens || [])
+          .map((prod) => ({
+            ...prod,
+            destaque: isProdutoDestaque(prod),
+            precoBase: getItemBasePrice(prod),
+            preco: getItemBasePrice(prod),
+          }))
+          .filter((prod) => prod.ativo !== false && prod.ativoVitrine !== false)
+          .sort((a, b) => (a.ordem || 0) - (b.ordem || 0)),
+      }));
+
+      const categoriasComProdutos = categoriasComItensFiltrados.filter((cat) => cat.itens && cat.itens.length > 0);
+      setProdutosRaw(categoriasComProdutos);
+
+      if (salvarCache) {
+        setCardapioCache(slugEfetivo, {
+          restaurante: restauranteComHorario,
+          produtosPorCategoria: categoriasComProdutos,
+          versaoCardapio: payload?.versaoCardapio || null,
+        });
+      }
+
+      return true;
+    };
+
     const fetchTudo = async () => {
+      let cacheAplicado = false;
       try {
         setLoadingProdutos(true);
 
-        const res = await axios.get(`${API_URL}/restaurantes/${slugEfetivo}`);
-        const restauranteFresh = normalizarRestaurante(res.data);
+        const cached = getCardapioCache(slugEfetivo);
+        if (cached) {
+          cacheAplicado = aplicarPayload(cached);
+          if (cacheAplicado) setLoadingProdutos(false);
+        }
 
+        try {
+          const res = await axios.get(`${API_URL}/vitrine/cardapio/${encodeURIComponent(slugEfetivo)}`);
+          if (aplicarPayload(res.data, { salvarCache: true })) return;
+        } catch (novaRotaErr) {
+          console.warn("Rota /vitrine/cardapio indisponível; usando fallback legado:", novaRotaErr?.message || novaRotaErr);
+        }
+
+        const res = await axios.get(`${API_URL}/restaurantes/${slugEfetivo}`);
+        const restauranteFresh = normalizarRestaurante(res.data?.restaurante || res.data);
         if (!restauranteFresh) {
           navigate("/erro", { replace: true });
           return;
         }
 
-        // ✅ AQUI: se mudou restaurante, zera carrinho imediatamente
+        let produtosPorCategoria = res.data?.produtosPorCategoria || restauranteFresh?.produtosPorCategoria || [];
+
         if (restauranteFresh?._id) {
-          const owner = String(localStorage.getItem(CART_OWNER_KEY) || "");
-          if (owner && owner !== String(restauranteFresh._id)) {
-            // zera a badge na hora (o interval também atualiza depois)
-            setQuantidadeCarrinho(0);
-          }
-          syncCartOwnerOrReset(restauranteFresh._id);
-        }
+          const [produtosRes, horarioRes] = await Promise.allSettled([
+            axios.get(`${API_URL}/produtos/${restauranteFresh._id}`),
+            axios.get(`${API_URL}/restaurantes/horario/${restauranteFresh._id}`),
+          ]);
 
-        let produtosPorCategoria =
-          res.data?.produtosPorCategoria || restauranteFresh?.produtosPorCategoria || [];
-
-        // ✅ Correção crítica: algumas versões da API pública /restaurantes/:slug
-        // retornavam precoBase vazio, mesmo com preço salvo no produto.
-        // Buscamos a rota de produtos do restaurante e mesclamos preço/dados pelo _id.
-        try {
-          if (restauranteFresh?._id) {
-            const produtosRes = await axios.get(`${API_URL}/produtos/${restauranteFresh._id}`);
-            const produtosLista = Array.isArray(produtosRes.data) ? produtosRes.data : [];
+          if (produtosRes.status === "fulfilled") {
+            const produtosLista = Array.isArray(produtosRes.value.data) ? produtosRes.value.data : [];
             const produtosMap = new Map(produtosLista.map((p) => [String(p._id), p]));
-
             produtosPorCategoria = (produtosPorCategoria || []).map((cat) => ({
               ...cat,
               itens: (cat.itens || []).map((item) => {
                 const completo = produtosMap.get(String(item._id));
                 if (!completo) return item;
-
                 const precoCorrigido = getItemBasePrice(completo) || getItemBasePrice(item);
                 return {
                   ...item,
@@ -358,48 +437,16 @@ const Publico = () => {
               }),
             }));
           }
-        } catch (precoErr) {
-          console.warn("Não foi possível sincronizar preços pela rota /produtos:", precoErr);
-        }
 
-        let restauranteComHorario = restauranteFresh;
-        try {
-          if (restauranteFresh?._id) {
-            const horarioRes = await axios.get(`${API_URL}/restaurantes/horario/${restauranteFresh._id}`);
-            restauranteComHorario = { ...restauranteFresh, ...(horarioRes.data || {}) };
+          if (horarioRes.status === "fulfilled") {
+            Object.assign(restauranteFresh, horarioRes.value.data || {});
           }
-        } catch (horarioErr) {
-          console.warn("Não foi possível sincronizar horário público:", horarioErr);
         }
 
-        localStorage.setItem("restauranteSelecionado", JSON.stringify(restauranteComHorario));
-
-        setRestaurante(restauranteComHorario);
-        setStatusLoja(calcularStatusLoja(restauranteComHorario));
-
-        const categoriasBase = (produtosPorCategoria || []).filter((cat) => cat.ativa !== false);
-
-        const categoriasComItensFiltrados = categoriasBase.map((cat) => ({
-          ...cat,
-          itens: (cat.itens || [])
-            .map((prod) => ({
-              ...prod,
-              destaque: isProdutoDestaque(prod),
-              precoBase: getItemBasePrice(prod),
-              preco: getItemBasePrice(prod),
-            }))
-            .filter((prod) => prod.ativo !== false)
-            .sort((a, b) => (a.ordem || 0) - (b.ordem || 0)),
-        }));
-
-        const categoriasComProdutos = categoriasComItensFiltrados.filter(
-          (cat) => cat.itens && cat.itens.length > 0
-        );
-
-        setProdutosRaw(categoriasComProdutos);
+        aplicarPayload({ restaurante: restauranteFresh, produtosPorCategoria }, { salvarCache: true });
       } catch (err) {
         console.error("Erro ao buscar produtos/restaurante:", err);
-        navigate("/erro", { replace: true });
+        if (!cacheAplicado) navigate("/erro", { replace: true });
       } finally {
         setLoadingProdutos(false);
       }
