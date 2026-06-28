@@ -1,0 +1,1 @@
+function e(e){return String(e||``).trim().replace(/\/+$/,``)}var t=e(`https://api.movyo.delivery`);t.endsWith(`/api`)&&t.slice(0,-4);var n=t.endsWith(`/api`)?t:`${t}/api`,r=n,i=``;export{n,i as r,r as t};
